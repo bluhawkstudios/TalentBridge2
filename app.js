@@ -304,7 +304,9 @@ let teamChatOpen = false;
 let activeRecruiter = "Priya Nair";
 let theme = localStorage.getItem("talentbridge-theme") || "light";
 let interviewView = "Upcoming";
+let interviewCalendarDate = new Date(2026,5,1);
 let aiSourcingView = "Grid";
+let activeConversation = "Priya Nair";
 let pageFilterState = {};
 document.documentElement.dataset.theme = theme;
 
@@ -536,7 +538,12 @@ function bindShell() {
     toggle.setAttribute("aria-label", `Switch to ${theme === "light" ? "dark" : "light"} mode`);
     toggle.title = `${theme === "light" ? "Dark" : "Light"} mode`;
   });
-  $("#global-search")?.addEventListener("keydown", e => { if(e.key==="Enter"){ currentPage = session.role==="Client" ? "jobs" : "candidates"; filter=e.target.value; render(); }});
+  $("#global-search")?.addEventListener("keydown", e => {
+    if(e.key!=="Enter")return;
+    currentPage={Client:"jobs",Admin:"candidates",Recruiter:"sourcing",Candidate:"applications"}[session.role];
+    filter=e.target.value.trim()||"All";
+    render();
+  });
   $("#team-chat-bubble")?.addEventListener("click", () => {
     teamChatOpen = !teamChatOpen;
     $("#team-chat-panel")?.classList.toggle("open", teamChatOpen);
@@ -769,7 +776,7 @@ function dashboard(role) {
   const activeJobs = jobs.filter(job => job.status === "Active").length;
   const metrics = role==="Candidate" ? [["Active applications",jobs.length,"Current applications","applications"],["Upcoming interviews",interviews.length,interviews.length ? "Next interview scheduled" : "No interviews scheduled","interviews"],["Profile complete",`${state.profile.completion}%`,"Profile strength","profile"],["Offers",offers,"Awaiting response","offers"]] :
     role==="Client" ? [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["CVs to review",candidates.length,"Profiles received","cv-review"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Offers open",offers,"At offer stage","offers"]] :
-    role==="Recruiter" ? [["Assigned jobs",jobs.length,`${activeJobs} active`,"jobs"],["Candidates sourced",candidates.length,"In assigned pipelines","sourcing"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Placements",candidates.filter(candidate => candidate.stage === "Joined").length,"Joined candidates","candidates","Joined"]] :
+    role==="Recruiter" ? [["Assigned jobs",jobs.length,`${activeJobs} active`,"jobs"],["Candidates sourced",candidates.length,"In assigned pipelines","sourcing"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Placements",candidates.filter(candidate => candidate.stage === "Joined").length,"Joined candidates","sourcing","Joined"]] :
     [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["Candidates in pipeline",candidates.length,"All active profiles","candidates"],["Interviews scheduled",interviews.length,"All scheduled interviews","interviews"],["Offers in pipeline",offers,"Offered or joined","candidates","Offer pipeline"]];
   const stageGroups = [
     ["Sourced", candidates.length],
@@ -793,7 +800,7 @@ function dashboard(role) {
       ${[["✦",`${candidates.filter(candidate=>candidate.score>=90).length} high-match profiles in this view`,"8 min"],["◷",`${interviews.filter(interview=>interview.status==="Confirmed").length} interviews confirmed`,"35 min"],["◇",`${candidates.filter(candidate=>candidate.stage==="Offered").length} candidates at offer stage`,"2 hr"],["▤",`${activeJobs} jobs currently active`,"4 hr"]].map(x=>`<div class="activity-item"><span class="activity-icon">${x[0]}</span><p>${x[1]}</p><time>${x[2]}</time></div>`).join("")}
     </div></div>
   </div>
-  <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"Active applications":"Priority jobs"}</h3><a data-go="jobs">View all</a></div>
+  <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"Active applications":"Priority jobs"}</h3><a data-go="${role==="Candidate"?"applications":"jobs"}">View all</a></div>
     <div class="table-wrap"><table><thead><tr><th>Role</th><th>Type</th><th>Status</th><th>${role==="Candidate"?"Progress":"Candidates"}</th><th>Interviews</th><th>Owner</th></tr></thead><tbody>
       ${jobs.slice(0,4).map(j=>{const jobCandidates=candidates.filter(candidate=>candidate.jobId===j.id).length;const jobInterviews=interviews.filter(interview=>interview.jobId===j.id).length;return `<tr class="${role==="Recruiter"?`urgency-row urgency-${j.urgency.toLowerCase()}`:""}"><td><b>${j.title}</b><br><small>${j.client} · ${j.location}</small></td><td>${badge(j.type)}</td><td>${badge(j.status)} ${urgencyBadge(j.urgency)}${role!=="Recruiter"?` ${badge(j.assignmentStatus)}`:""}</td><td>${jobCandidates}</td><td>${jobInterviews}</td><td>${person(j.recruiter)}</td></tr>`}).join("") || `<tr><td colspan="6" class="empty">No ${filter.toLowerCase()} records are available for this workspace.</td></tr>`}
     </tbody></table></div></div>`;
@@ -806,7 +813,7 @@ function jobsPage(role) {
   return `${pageHead(role==="Recruiter"?"My Assigned Jobs":role==="Client"?"My Job Listings":"Job Management","Manage requirements across permanent and contract hiring.",action)}
   <div class="card panel"><div class="filter-row">${tabs()}<div style="display:flex;gap:8px"><select id="job-status" style="width:140px"><option>All statuses</option><option>Active</option><option>On Hold</option></select><button class="btn btn-secondary" id="export-btn">⇩ Export</button></div></div>
   <div class="table-wrap"><table><thead><tr><th>Job</th><th>Engagement</th><th>Location</th><th>Openings</th><th>Pipeline</th><th>Job status</th><th>Assignment</th><th>Urgency</th><th>Recruiter</th><th>Actions</th></tr></thead><tbody>
-  ${data.map(j=>`<tr class="${role==="Recruiter"?`urgency-row urgency-${j.urgency.toLowerCase()}`:""}" data-filter-type="${j.type}" data-filter-status="${j.status} ${j.assignmentStatus} ${j.urgency}" data-filter-owner="${j.recruiter}" data-filter-date="${j.date}"><td><b>${j.title}</b><br><small>${j.id} · ${j.client} · ${j.department||"General"}</small></td><td>${badge(j.type)}</td><td>${j.location}<br><small>${j.mode} · ${j.salary}</small></td><td>${j.openings}</td><td><b>${j.cv}</b> CVs · ${j.interviews} INT</td><td>${badge(j.status)}</td><td>${badge(j.assignmentStatus)}</td><td>${urgencyBadge(j.urgency)}</td><td>${j.recruiter?person(j.recruiter):"<span class=\"muted\">Awaiting Admin</span>"}</td><td><div class="row-actions"><button class="mini-btn view-job" data-id="${j.id}">View</button>${role==="Admin"?`<button class="mini-btn assign-job" data-id="${j.id}">${j.assignmentStatus==="Pending"?"Assign":"Reassign"}</button>`:""}<button class="mini-btn clone-job" data-id="${j.id}">Clone</button><button class="mini-btn toggle-job" data-id="${j.id}" aria-label="${j.status==="Active"?"Place job on hold":"Set job active"}">${j.status==="Active"?"Hold":"Active"}</button></div></td></tr>`).join("") || `<tr><td colspan="10" class="empty">No matching jobs found.</td></tr>`}
+  ${data.map(j=>`<tr class="${role==="Recruiter"?`urgency-row urgency-${j.urgency.toLowerCase()}`:""}" data-filter-type="${j.type}" data-filter-status="${j.status} ${j.assignmentStatus} ${j.urgency}" data-filter-owner="${j.recruiter}" data-filter-date="${j.date}"><td><b>${j.title}</b><br><small>${j.id} · ${j.client} · ${j.department||"General"}</small></td><td>${badge(j.type)}</td><td>${j.location}<br><small>${j.mode} · ${j.salary}</small></td><td>${j.openings}</td><td><b>${j.cv}</b> CVs · ${j.interviews} INT</td><td>${badge(j.status)}</td><td>${badge(j.assignmentStatus)}</td><td>${urgencyBadge(j.urgency)}</td><td>${j.recruiter?person(j.recruiter):"<span class=\"muted\">Awaiting Admin</span>"}</td><td><div class="row-actions"><button class="mini-btn view-job" data-id="${j.id}">View</button>${role==="Admin"?`<button class="mini-btn assign-job" data-id="${j.id}">${j.assignmentStatus==="Pending"?"Assign":"Reassign"}</button>`:""}${["Admin","Client"].includes(role)?`<button class="mini-btn clone-job" data-id="${j.id}">Clone</button><button class="mini-btn toggle-job" data-id="${j.id}" aria-label="${j.status==="Active"?"Place job on hold":"Set job active"}">${j.status==="Active"?"Hold":"Active"}</button>`:""}</div></td></tr>`).join("") || `<tr><td colspan="10" class="empty">No matching jobs found.</td></tr>`}
   </tbody></table></div></div>`;
 }
 
@@ -838,18 +845,27 @@ function interviewsPage(role,page) {
   const visibleInterviews = interviewView === "Completed"
     ? interviews.filter(interview => /completed/i.test(interview.status))
     : interviews.filter(interview => !/completed|cancelled/i.test(interview.status));
+  const calendarYear=interviewCalendarDate.getFullYear();
+  const calendarMonth=interviewCalendarDate.getMonth();
   const calendarEvents = interviews.reduce((days,interview) => {
-    const day = Number((interview.date.match(/\d+/) || [0])[0]);
+    const eventDate=parseAppDate(interview.date);
+    if(!eventDate||eventDate.getFullYear()!==calendarYear||eventDate.getMonth()!==calendarMonth)return days;
+    const day=eventDate.getDate();
     (days[day] ||= []).push(interview);
     return days;
   },{});
-  const calendar = `<div class="calendar-title"><button class="mini-btn" aria-label="Previous month">‹</button><b>June 2026</b><button class="mini-btn" aria-label="Next month">›</button></div>
+  const firstWeekday=new Date(calendarYear,calendarMonth,1).getDay();
+  const daysInMonth=new Date(calendarYear,calendarMonth+1,0).getDate();
+  const calendarLabel=interviewCalendarDate.toLocaleDateString("en-US",{month:"long",year:"numeric"});
+  const calendar = `<div class="calendar-title"><button class="mini-btn" id="calendar-prev" aria-label="Previous month">‹</button><b>${calendarLabel}</b><button class="mini-btn" id="calendar-next" aria-label="Next month">›</button></div>
     <div class="calendar-weekdays">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(day=>`<span>${day}</span>`).join("")}</div>
-    <div class="calendar-grid">${Array.from({length:35},(_,index)=>{
-      const day=index-1;
-      if(day<1||day>30) return `<div class="calendar-empty"></div>`;
+    <div class="calendar-grid">${Array.from({length:42},(_,index)=>{
+      const day=index-firstWeekday+1;
+      if(day<1||day>daysInMonth) return `<div class="calendar-empty"></div>`;
       const events=calendarEvents[day]||[];
-      return `<div class="${day===13?"calendar-today":""}"><b>${day}</b>${events.slice(0,2).map(event=>{const candidate=state.candidates.find(item=>item.id===event.candidateId);return `<button class="cal-event calendar-event" data-id="${event.id}" data-filter-status="${event.status}" data-filter-date="${event.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}">${esc(event.time)} · ${esc(event.candidate)}</button>`}).join("")}${events.length>2?`<small class="calendar-more">+${events.length-2} more</small>`:""}</div>`;
+      const today=new Date();
+      const isToday=today.getFullYear()===calendarYear&&today.getMonth()===calendarMonth&&today.getDate()===day;
+      return `<div class="${isToday?"calendar-today":""}"><b>${day}</b>${events.slice(0,2).map(event=>{const candidate=state.candidates.find(item=>item.id===event.candidateId);return `<button class="cal-event calendar-event" data-id="${event.id}" data-filter-status="${event.status}" data-filter-date="${event.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}">${esc(event.time)} · ${esc(event.candidate)}</button>`}).join("")}${events.length>2?`<small class="calendar-more">+${events.length-2} more</small>`:""}</div>`;
     }).join("")}</div>`;
   return `${pageHead(ai?"AI Technical Interviews":"Interview Management",ai?"Assign, monitor, and review structured AI interviews.":"Schedule interviews, coordinate panels, and capture feedback.",`<button class="btn btn-secondary" data-bulk-upload="interviews">⇧ Bulk upload</button><button class="btn btn-primary" id="schedule-interview">＋ Schedule interview</button>`)}
   ${ai?kpis([["Assigned",interviews.filter(interview=>interview.round==="AI Technical").length,"AI interview records"],["Completed",interviews.filter(interview=>interview.round==="AI Technical"&&interview.status==="Completed").length,"Finished assessments"],["Avg. score",`${Math.round(roleCandidates(role).reduce((sum,candidate)=>sum+candidate.score,0)/Math.max(roleCandidates(role).length,1))}%`,"Linked candidate score"],["Shortlisted",roleCandidates(role).filter(candidate=>candidate.score>=85).length,"Score 85% or higher"]]):""}
@@ -860,10 +876,12 @@ function interviewsPage(role,page) {
 }
 
 function communicationPage() {
+  const conversations=[["Priya Nair","Senior Product Designer","10:33 AM"],["Ananya Sharma","Data Engineer","Yesterday"],["Meera Iyer","Contract documents","Mon"]];
+  const selected=conversations.find(item=>item[0]===activeConversation)||conversations[0];
   return `${pageHead("Communication Hub","Keep every hiring conversation connected to its context.")}
-  <div class="card chat-shell"><aside class="chat-list"><div class="chat-search"><input placeholder="Search conversations..." /></div>
-  ${[["Priya Nair","Senior Product Designer","10:33 AM"],["Ananya Sharma","Data Engineer","Yesterday"],["Meera Iyer","Contract documents","Mon"]].map((x,i)=>`<div class="conversation ${i===0?"active":""}"><span class="avatar">${initials(x[0])}</span><div style="min-width:0"><b>${x[0]}</b><p>${x[1]}</p></div><small>${x[2]}</small></div>`).join("")}</aside>
-  <section class="chat-main"><div class="chat-head"><span class="avatar">PN</span><div><b>Priya Nair</b><br><small style="color:var(--green)">● Online · Senior Product Designer</small></div></div>
+  <div class="card chat-shell"><aside class="chat-list"><div class="chat-search"><input id="conversation-search" placeholder="Search conversations..." /></div>
+  ${conversations.map(x=>`<button type="button" class="conversation ${x[0]===selected[0]?"active":""}" data-conversation="${x[0]}"><span class="avatar">${initials(x[0])}</span><div style="min-width:0"><b>${x[0]}</b><p>${x[1]}</p></div><small>${x[2]}</small></button>`).join("")}</aside>
+  <section class="chat-main"><div class="chat-head"><span class="avatar">${initials(selected[0])}</span><div><b>${selected[0]}</b><br><small style="color:var(--green)">● Online · ${selected[1]}</small></div></div>
   <div class="messages">${state.messages.map(m=>`<div class="bubble ${m.me?"me":""}">${esc(m.text)}<small>${m.time}</small></div>`).join("")}</div>
   <form class="message-compose" id="message-form"><button type="button" class="icon-btn">＋</button><input id="message-input" placeholder="Write a message..." required /><button class="btn btn-primary">Send</button></form></section></div>`;
 }
@@ -879,7 +897,7 @@ function offersPage(role) {
     <div class="grid-equal"><div><h3>Offer details</h3><p><b>Compensation:</b> ${candidateOffer.ctc}</p><p><b>Start date:</b> ${candidateOffer.offer?.startDate||"To be confirmed"}</p><p><b>Terms:</b> ${candidateOffer.offer?.terms||"Standard company terms"}</p></div><div><h3>Required documents</h3><p>✓ Identity proof</p><p>✓ Current employment letter</p><p>○ Signed offer letter</p><p>○ Bank details</p></div></div>
     <div style="display:flex;gap:10px;margin-top:20px"><button class="btn btn-primary" id="accept-offer" data-id="${candidateOffer.id}">Accept offer</button><button class="btn btn-secondary" id="download-offer">⇩ Download</button><button class="btn btn-danger" id="decline-offer">Decline</button></div>`:`<div class="empty"><div class="empty-icon">◇</div><h3>No active offer</h3><p>Your offer or contract will appear here when it is issued.</p></div>`):
     `<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Position</th><th>Type</th><th>Compensation</th><th>Start date</th><th>Status</th><th>Action</th></tr></thead><tbody>
-    ${offerCandidates.map(c=>`<tr data-filter-type="${c.type}" data-filter-status="${c.stage}" data-filter-owner="${c.recruiter}" data-filter-date="${c.offer?.startDate||""}"><td>${person(c.name)}</td><td>${c.role}</td><td>${badge(c.type)}</td><td>${c.ctc}</td><td>${c.offer?.startDate||"To be confirmed"}</td><td>${badge(c.stage)}</td><td><button class="mini-btn">View</button> <button class="mini-btn">${c.stage==="Joined"?"Onboard":"Edit"}</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No candidates are currently at offer stage.</td></tr>`}</tbody></table></div>`}
+    ${offerCandidates.map(c=>`<tr data-filter-type="${c.type}" data-filter-status="${c.stage}" data-filter-owner="${c.recruiter}" data-filter-date="${c.offer?.startDate||""}"><td>${person(c.name)}</td><td>${c.role}</td><td>${badge(c.type)}</td><td>${c.ctc}</td><td>${c.offer?.startDate||"To be confirmed"}</td><td>${badge(c.stage)}</td><td><button class="mini-btn view-offer" data-id="${c.id}">View</button> <button class="mini-btn manage-offer" data-id="${c.id}">${c.stage==="Joined"?"Onboard":"Edit"}</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No candidates are currently at offer stage.</td></tr>`}</tbody></table></div>`}
   </div>`;
 }
 
@@ -889,7 +907,7 @@ function usersPage() {
   return `${pageHead("User Management","Control access, roles, permissions, and recruiter-client mapping.",`<button class="btn btn-secondary" data-bulk-upload="users">⇧ Bulk upload</button><button class="btn btn-primary" id="new-user">＋ Add user</button>`)}
   ${kpis([["Total users",state.users.length,"Across 4 roles"],["Active users",active.length,"Shared workspace accounts"],["Recruiters",recruiters.length,`${state.jobs.length} assigned jobs`],["Login health","99.8%","Simulation status"]])}
   <div class="card panel"><div class="table-wrap"><table><thead><tr><th>User</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr></thead><tbody>
-  ${state.users.map((u,i)=>`<tr data-filter-status="${u.status}" data-filter-type="${u.role}" data-filter-owner="" data-filter-date="${u.last}"><td>${person(u.name,u.email)}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td><td>${u.last}</td><td><button class="mini-btn edit-user" data-i="${i}">Edit</button> <button class="mini-btn">Permissions</button></td></tr>`).join("")}</tbody></table></div></div>`;
+  ${state.users.map((u,i)=>`<tr data-filter-status="${u.status}" data-filter-type="${u.role}" data-filter-owner="" data-filter-date="${u.last}"><td>${person(u.name,u.email)}</td><td>${badge(u.role)}</td><td>${badge(u.status)}</td><td>${u.last}</td><td><button class="mini-btn edit-user" data-i="${i}">Edit</button> <button class="mini-btn manage-permissions" data-i="${i}">Permissions</button></td></tr>`).join("")}</tbody></table></div></div>`;
 }
 
 function clientsPage() {
@@ -1063,6 +1081,8 @@ function bindPage() {
   });
   $$("[data-filter]").forEach(x=>x.onclick=()=>{filter=x.dataset.filter;render()});
   $$("[data-interview-view]").forEach(button=>button.onclick=()=>{interviewView=button.dataset.interviewView;render()});
+  $("#calendar-prev")?.addEventListener("click",()=>{interviewCalendarDate=new Date(interviewCalendarDate.getFullYear(),interviewCalendarDate.getMonth()-1,1);render()});
+  $("#calendar-next")?.addEventListener("click",()=>{interviewCalendarDate=new Date(interviewCalendarDate.getFullYear(),interviewCalendarDate.getMonth()+1,1);render()});
   $("#job-status")?.addEventListener("change",event=>{
     pageFilterState[currentPage]={...(pageFilterState[currentPage]||{}),status:event.target.value==="All statuses"?"All statuses":event.target.value};
     if($("#page-filter-status"))$("#page-filter-status").value=pageFilterState[currentPage].status;
@@ -1105,12 +1125,20 @@ function bindPage() {
   $$(".feedback-interview").forEach(x=>x.onclick=()=>feedback(x.dataset.id));
   $$(".calendar-event").forEach(x=>x.onclick=()=>feedback(x.dataset.id));
   $("#message-form")?.addEventListener("submit",e=>{e.preventDefault();const inp=$("#message-input");state.messages.push({from:roles[session.role].user,text:inp.value,time:"Just now",me:true});save();render();toast("Message sent")});
+  $$(".conversation").forEach(button=>button.onclick=()=>{activeConversation=button.dataset.conversation;render()});
+  $("#conversation-search")?.addEventListener("input",event=>{
+    const query=event.target.value.trim().toLowerCase();
+    $$(".conversation").forEach(item=>item.classList.toggle("filter-hidden",query&&!item.textContent.toLowerCase().includes(query)));
+  });
   $("#raise-offer")?.addEventListener("click",showOfferForm);
+  $$(".view-offer").forEach(button=>button.onclick=()=>showOfferDetails(button.dataset.id));
+  $$(".manage-offer").forEach(button=>button.onclick=()=>showOfferManagement(button.dataset.id));
   $("#accept-offer")?.addEventListener("click",event=>{const candidate=state.candidates.find(item=>item.id===event.currentTarget.dataset.id);candidate.stage="Joined";if(candidate.offer)candidate.offer.status="Accepted";save();render();toast("Offer accepted and all workspaces updated")});
   $("#decline-offer")?.addEventListener("click",()=>confirmAction("Decline this offer?","The recruiter will be notified.",()=>{const candidate=roleCandidates("Candidate").find(item=>item.stage==="Offered");if(candidate){candidate.stage="Client Review";if(candidate.offer)candidate.offer.status="Declined";save();render()}toast("Offer declined")}));
   $("#download-offer")?.addEventListener("click",()=>{const candidate=roleCandidates("Candidate").find(item=>["Offered","Joined"].includes(item.stage));if(candidate)downloadCsv("offer-details.csv",[["Role","Company","Compensation"],[candidate.role,candidate.client,candidate.ctc]])});
   $("#new-user")?.addEventListener("click",showUserForm);
   $$(".edit-user").forEach(x=>x.onclick=()=>showUserForm(state.users[+x.dataset.i],+x.dataset.i));
+  $$(".manage-permissions").forEach(button=>button.onclick=()=>showUserPermissions(state.users[+button.dataset.i]));
   $("#new-client")?.addEventListener("click",showClientForm);
   $$(".view-client").forEach(button=>button.onclick=()=>showClientAccount(button.dataset));
   $$(".client-menu").forEach(button=>button.onclick=()=>genericForm(`Manage ${button.dataset.client}`,["Account status","Account owner","Internal notes"],"Client account updated"));
@@ -1600,7 +1628,7 @@ function applyPageFilters() {
     const raw=String(value||"").trim();
     if(!raw) return null;
     if(/^\d{4}-\d{2}-\d{2}$/.test(raw)) return new Date(`${raw}T00:00:00`);
-    const normalized=raw.replace(/\bToday\b/i,"13 Jun 2026");
+    const normalized=raw.replace(/\bToday\b/i,new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}));
     const match=normalized.match(/(\d{1,2})\s+([A-Za-z]{3,9})\s+(\d{4})/);
     if(match) return new Date(`${match[1]} ${match[2]} ${match[3]} 00:00:00`);
     const parsed=new Date(normalized);
@@ -1619,10 +1647,14 @@ function applyPageFilters() {
     const fromDate=parseFilterDate(dateFrom);
     const toDate=parseFilterDate(dateTo);
     if(toDate)toDate.setHours(23,59,59,999);
+    const today=new Date();
+    const todayStart=new Date(today.getFullYear(),today.getMonth(),today.getDate());
+    const todayEnd=new Date(todayStart);todayEnd.setHours(23,59,59,999);
+    const last30Start=new Date(todayStart);last30Start.setDate(last30Start.getDate()-29);
     const matchesDate=date==="Any date"||
-      (date==="Today"&&(/today|13 jun 2026/.test(dateText)))||
+      (date==="Today"&&recordDate&&recordDate>=todayStart&&recordDate<=todayEnd)||
       (date==="June 2026"&&(/jun 2026|june 2026/.test(dateText)))||
-      (date==="Last 30 days"&&recordDate&&recordDate>=new Date("2026-05-15T00:00:00")&&recordDate<=new Date("2026-06-13T23:59:59"))||
+      (date==="Last 30 days"&&recordDate&&recordDate>=last30Start&&recordDate<=todayEnd)||
       (date==="Custom date"&&recordDate&&(!fromDate||recordDate>=fromDate)&&(!toDate||recordDate<=toDate));
     const show=matchesSearch&&matchesType&&matchesStatus&&matchesOwner&&matchesDate;
     target.classList.toggle("filter-hidden",!show);
@@ -1747,7 +1779,7 @@ function showAssignmentForm(id){
     save();closeModal();render();toast(`${job.title} assigned to ${data.recruiter}`);
   };
 }
-function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div><h3>Required skills</h3>${skillTags(j.skills)}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>Source candidates</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":"candidates";render()}) }
+function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div><h3>Required skills</h3>${skillTags(j.skills)}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>${session.role==="Client"?"Review candidates":"Source candidates"}</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":session.role==="Client"?"cv-review":"candidates";render()}) }
 function miniResumeMarkup(profile,{visible=true,external=false}={}){
   const experience=profile.experienceEntries||[];
   const education=profile.educationEntries||[];
@@ -2007,7 +2039,40 @@ function feedback(id){
   };
 }
 function showOfferForm(){modal("Raise offer / contract",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Document type",name:"documentType",type:"select",options:["Permanent offer","Contract agreement"]},{label:"Fixed CTC / monthly rate",name:"ctc",type:"select",options:[...APP_OPTIONS.permanentSalary,...APP_OPTIONS.contractSalary]},{label:"Variable / tax terms",name:"terms"},{label:"Start date",name:"startDate",type:"date"},{label:"Offer expiry",name:"expiry",type:"date"},{label:"Special terms",name:"notes",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Save draft</button><button class="btn btn-primary" id="submit-modal">Issue document</button>`);$(".modal-close-2").onclick=()=>{closeModal();toast("Offer saved as draft")};$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const candidate=state.candidates.find(item=>d.candidateId.startsWith(item.id));candidate.stage="Offered";candidate.ctc=d.ctc;candidate.offer={documentType:d.documentType,terms:d.terms,startDate:d.startDate,expiry:d.expiry,notes:d.notes,status:"Awaiting response"};save();closeModal();render();toast("Offer issued and updated across all workspaces")}}
+function showOfferDetails(id){
+  const candidate=state.candidates.find(item=>item.id===id);
+  if(!candidate)return;
+  const offer=candidate.offer||{};
+  modal(`${candidate.name} · ${candidate.role}`,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(candidate.type)}${badge(candidate.stage)}${badge(offer.status||"Issued")}</div><div class="grid-equal"><div><small>Compensation</small><h3>${esc(candidate.ctc)}</h3></div><div><small>Start date</small><h3>${esc(offer.startDate||"To be confirmed")}</h3></div></div><p><b>Document:</b> ${esc(offer.documentType||"Offer / contract")}</p><p><b>Terms:</b> ${esc(offer.terms||"Standard company terms")}</p><p><b>Expiry:</b> ${esc(offer.expiry||"Not specified")}</p><p><b>Notes:</b> ${esc(offer.notes||"No additional notes")}</p>`,`<button class="btn btn-secondary modal-close-2">Close</button>`);
+  $(".modal-close-2").onclick=closeModal;
+}
+function showOfferManagement(id){
+  const candidate=state.candidates.find(item=>item.id===id);
+  if(!candidate)return;
+  if(candidate.stage==="Joined"){
+    modal(`Onboarding · ${candidate.name}`,`<p>Track the joining checklist for ${esc(candidate.role)} at ${esc(candidate.client)}.</p><label class="check"><input type="checkbox" checked> Offer accepted</label><label class="check"><input type="checkbox"> Identity and payroll documents verified</label><label class="check"><input type="checkbox"> Joining confirmation sent</label>`,`<button class="btn btn-secondary modal-close-2">Close</button><button class="btn btn-primary" id="complete-onboarding">Save checklist</button>`);
+    $(".modal-close-2").onclick=closeModal;
+    $("#complete-onboarding").onclick=()=>{closeModal();toast("Onboarding checklist updated")};
+    return;
+  }
+  const offer=candidate.offer||{};
+  modal(`Edit offer · ${candidate.name}`,`<form id="modal-form">${fields([{label:"Compensation",name:"ctc",value:candidate.ctc},{label:"Start date",name:"startDate",type:"date",value:offer.startDate},{label:"Offer expiry",name:"expiry",type:"date",value:offer.expiry},{label:"Terms",name:"terms",value:offer.terms},{label:"Special terms",name:"notes",type:"textarea",value:offer.notes,full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Save offer</button>`);
+  $(".modal-close-2").onclick=closeModal;
+  $("#submit-modal").onclick=()=>{const form=$("#modal-form");if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form));candidate.ctc=data.ctc;candidate.offer={...offer,...data};save();closeModal();render();toast("Offer updated across linked workspaces")};
+}
 function showUserForm(u=null,idx=-1){modal(u?"Edit user":"Add user",`<form id="modal-form">${fields([{label:"Full name",name:"name",value:u?.name},{label:"Email",name:"email",type:"email",value:u?.email},{label:"Role",name:"role",type:"select",options:["Admin","Client","Recruiter","Candidate"],value:u?.role},{label:"Status",name:"status",type:"select",options:["Active","Inactive"],value:u?.status}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Save user</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));d.last=u?.last||"Never";if(idx>=0)state.users[idx]=d;else state.users.push(d);if(d.role==="Recruiter"&&!state.recruiters.includes(d.name))state.recruiters.push(d.name);save();closeModal();render();toast("User saved across linked workspaces")}}
+function showUserPermissions(user){
+  if(!user)return;
+  const permissions={
+    Admin:["Manage users and clients","Manage integrations","View reports","Manage all jobs"],
+    Client:["Create and manage jobs","Review candidate CVs","Manage interviews","Manage offers and documents"],
+    Recruiter:["View assigned jobs","Source and progress candidates","Schedule interviews","Use AI Sourcing"],
+    Candidate:["Manage own profile","View applications","Manage interview availability","Review own offers"]
+  }[user.role]||[];
+  modal(`Permissions · ${user.name}`,`<p>${esc(user.role)} workspace access for ${esc(user.email)}.</p>${permissions.map(permission=>`<label class="check" style="margin:12px 0"><input type="checkbox" checked> ${esc(permission)}</label>`).join("")}`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="save-permissions">Save permissions</button>`);
+  $(".modal-close-2").onclick=closeModal;
+  $("#save-permissions").onclick=()=>{closeModal();toast(`Permissions updated for ${user.name}`)};
+}
 function showClientAccount(data){
   const jobs=state.jobs.filter(job=>job.client===data.client);
   modal(data.client,`

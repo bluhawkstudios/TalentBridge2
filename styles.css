@@ -380,7 +380,7 @@ tbody tr:hover { background: #fafaff; }
 .chat-shell { display: grid; grid-template-columns: 300px 1fr; min-height: 590px; overflow: hidden; }
 .chat-list { border-right: 1px solid var(--line); }
 .chat-search { padding: 15px; border-bottom: 1px solid var(--line); }
-.conversation { padding: 14px 16px; border-bottom: 1px solid #eef0f5; cursor: pointer; display: flex; gap: 10px; }
+.conversation { width: 100%; padding: 14px 16px; border: 0; border-bottom: 1px solid #eef0f5; cursor: pointer; display: flex; gap: 10px; color: var(--text); background: transparent; text-align: left; font: inherit; }
 .conversation.active { background: var(--purple-soft); }
 .conversation p { margin: 2px 0; color: var(--muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-main { display: flex; flex-direction: column; }
