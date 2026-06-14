@@ -36,7 +36,7 @@ const roles = {
   },
   Recruiter: {
     user: "Priya Nair", company: "TalentOS Recruitment", email: "recruiter@talentos.ai",
-    nav: [["dashboard","Dashboard","⌂"],["jobs","My Assigned Jobs","▤"],["sourcing","Candidate Sourcing","✦"],["ai-sourcing","AI Sourcing","✦"],["candidates","Candidate Management","♧"],["interviews","Interview Scheduling","◷"],["communication","Communication Hub","✉"],["ai-interview","AI Technical Interview","◎"]]
+    nav: [["dashboard","Dashboard","⌂"],["jobs","My Assigned Jobs","▤"],["sourcing","Candidate Sourcing","✦"],["ai-sourcing","AI Sourcing","✦"],["interviews","Interview Scheduling","◷"],["communication","Communication Hub","✉"],["ai-interview","AI Technical Interview","◎"]]
   },
   Candidate: {
     user: "Rohan Kapoor", company: "Candidate Portal", email: "candidate@talentos.ai",
