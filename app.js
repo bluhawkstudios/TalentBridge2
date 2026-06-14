@@ -3,12 +3,25 @@ const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 const APP_OPTIONS = {
   departments:["Engineering","Product","Design","Data & Analytics","Quality Assurance","Information Security","Sales","Marketing","Finance","Human Resources","Operations","Customer Success"],
   cities:["Ahmedabad","Bengaluru","Bhopal","Bhubaneswar","Chandigarh","Chennai","Coimbatore","Delhi","Delhi NCR","Gurugram","Hyderabad","Indore","Jaipur","Kochi","Kolkata","Lucknow","Mumbai","Mysuru","Nagpur","Noida","Pune","Surat","Thiruvananthapuram","Vadodara","Visakhapatnam","Remote"],
+  locationsByState:{
+    "Andhra Pradesh":["Visakhapatnam","Vijayawada","Tirupati"],"Assam":["Guwahati"],"Bihar":["Patna"],
+    "Chandigarh":["Chandigarh"],"Delhi":["Delhi","Delhi NCR"],"Goa":["Panaji"],
+    "Gujarat":["Ahmedabad","Surat","Vadodara","Rajkot"],"Haryana":["Gurugram","Faridabad"],
+    "Karnataka":["Bengaluru","Mysuru","Mangaluru","Hubballi"],"Kerala":["Kochi","Thiruvananthapuram","Kozhikode"],
+    "Madhya Pradesh":["Bhopal","Indore"],"Maharashtra":["Mumbai","Pune","Nagpur","Nashik"],
+    "Odisha":["Bhubaneswar"],"Punjab":["Ludhiana","Amritsar"],"Rajasthan":["Jaipur","Jodhpur"],
+    "Tamil Nadu":["Chennai","Coimbatore","Madurai"],"Telangana":["Hyderabad"],"Uttar Pradesh":["Noida","Lucknow","Ghaziabad"],
+    "West Bengal":["Kolkata"],"Remote":["Remote"]
+  },
   skills:["Java","Spring Boot","Microservices","Python","Django","JavaScript","TypeScript","React","Angular","Vue.js","Node.js","AWS","Azure","Google Cloud","Docker","Kubernetes","Terraform","SQL","PostgreSQL","MongoDB","Spark","Kafka","Databricks","Figma","UX Research","Product Strategy","Agile","Scrum","Selenium","API Testing","Cybersecurity","Data Analytics","Power BI","Tableau"],
   permanentSalary:["₹3–5 LPA","₹5–8 LPA","₹8–12 LPA","₹12–18 LPA","₹18–25 LPA","₹25–35 LPA","₹35–50 LPA","₹50–75 LPA","₹75 LPA+"],
   contractSalary:["₹50,000–₹75,000 / month","₹75,000–₹1,00,000 / month","₹1,00,000–₹1,25,000 / month","₹1,25,000–₹1,50,000 / month","₹1,50,000–₹2,00,000 / month","₹2,00,000–₹3,00,000 / month","₹3,00,000+ / month"],
   workModes:["Hybrid","Remote","Onsite"],
   urgency:["Critical","High","Medium","Low"]
 };
+function profileStateForCity(city){
+  return Object.entries(APP_OPTIONS.locationsByState).find(([,cities])=>cities.includes(city))?.[0]||"";
+}
 const PIPELINE_STAGES=["Sourced","Screened","Client Review","AI Interview","L1 Interview","L2 Interview","L3 Interview","Offered","Joined"];
 const INTERVIEW_ROUNDS=["Recruiter Screen","Client L1","L2 – Portfolio","L3 – Leadership / Final","AI Technical","HR Round"];
 
@@ -71,7 +84,7 @@ const seed = {
   notifications: ["3 CVs are awaiting client feedback","Interview slot proposed for Meera Iyer","Aditya Rao accepted the contract","New AI sourcing campaign completed"],
   profile: {
     name:"Rohan Kapoor",email:"rohan.k@example.com",phone:"+91 98765 43120",location:"Bengaluru",preference:"Permanent",
-    currentFixed:22,currentVariable:2,expectedFixed:28,expectedVariable:2,notice:"30 days",lastWorkingDay:"",
+    currentFixed:22,currentVariable:2,expectedCtc:30,notice:"30 days",lastWorkingDay:"",
     skills:"Figma, UX Research, Product Strategy, Prototyping",
     educationEntries:[{degree:"B.Des",year:"2018",percentage:"82"}],
     experienceEntries:[{company:"Northstar Design Studio",designation:"Senior Product Designer",startMonth:"2018-07",endMonth:"2026-06"}],
@@ -211,11 +224,21 @@ const numericLpa=value=>{
 };
 state.profile.currentFixed=Number.isFinite(Number(state.profile.currentFixed))?Number(state.profile.currentFixed):numericLpa(state.profile.current)||22;
 state.profile.currentVariable=Number.isFinite(Number(state.profile.currentVariable))?Number(state.profile.currentVariable):2;
-state.profile.expectedFixed=Number.isFinite(Number(state.profile.expectedFixed))?Number(state.profile.expectedFixed):numericLpa(state.profile.expected)||28;
-state.profile.expectedVariable=Number.isFinite(Number(state.profile.expectedVariable))?Number(state.profile.expectedVariable):2;
+state.profile.expectedCtc=Number.isFinite(Number(state.profile.expectedCtc))?Number(state.profile.expectedCtc):
+  (Number.isFinite(Number(state.profile.expectedFixed))?Number(state.profile.expectedFixed):numericLpa(state.profile.expected)||28)
+  +(Number.isFinite(Number(state.profile.expectedVariable))?Number(state.profile.expectedVariable):2);
 state.profile.lastWorkingDay=/^\d{4}-\d{2}-\d{2}$/.test(state.profile.lastWorkingDay||state.profile.availability)?(state.profile.lastWorkingDay||state.profile.availability):"";
+state.profile.city ||= [...APP_OPTIONS.cities].sort((a,b)=>b.length-a.length).find(city=>String(state.profile.location||"").includes(city))||state.profile.location||"";
+state.profile.state ||= profileStateForCity(state.profile.city)||"";
+state.profile.locality ||= "";
+state.profile.location=[state.profile.locality,state.profile.city,state.profile.state].filter(Boolean).join(", ");
 state.profile.educationEntries=Array.isArray(state.profile.educationEntries)&&state.profile.educationEntries.length?state.profile.educationEntries:[{degree:state.profile.education?.split(",")[0]||"",year:"",percentage:""}];
 state.profile.experienceEntries=Array.isArray(state.profile.experienceEntries)&&state.profile.experienceEntries.length?state.profile.experienceEntries:[{company:"",designation:state.profile.experience||"",startMonth:"",endMonth:""}];
+state.profile.experienceEntries=state.profile.experienceEntries.map(entry=>{
+  const designation=String(entry.designation||"").trim();
+  const durationOnly=/^\d+(?:\.\d+)?\s*(?:years?|yrs?|months?|mos?)$/i.test(designation);
+  return {...entry,designation:durationOnly?"":designation};
+});
 state.profile.experienceGapReason ||= "";
 state.profile.completion=profileCompletionPercent(state.profile);
 state.integrations ||= [
@@ -751,7 +774,7 @@ function jobsPage(role) {
   return `${pageHead(role==="Recruiter"?"My Assigned Jobs":role==="Client"?"My Job Listings":"Job Management","Manage requirements across permanent and contract hiring.",action)}
   <div class="card panel"><div class="filter-row">${tabs()}<div style="display:flex;gap:8px"><select id="job-status" style="width:140px"><option>All statuses</option><option>Active</option><option>On Hold</option></select><button class="btn btn-secondary" id="export-btn">⇩ Export</button></div></div>
   <div class="table-wrap"><table><thead><tr><th>Job</th><th>Engagement</th><th>Location</th><th>Openings</th><th>Pipeline</th><th>Job status</th><th>Assignment</th><th>Urgency</th><th>Recruiter</th><th>Actions</th></tr></thead><tbody>
-  ${data.map(j=>`<tr class="${role==="Recruiter"?`urgency-row urgency-${j.urgency.toLowerCase()}`:""}" data-filter-type="${j.type}" data-filter-status="${j.status} ${j.assignmentStatus} ${j.urgency}" data-filter-owner="${j.recruiter}" data-filter-date="${j.date}"><td><b>${j.title}</b><br><small>${j.id} · ${j.client} · ${j.department||"General"}</small></td><td>${badge(j.type)}</td><td>${j.location}<br><small>${j.mode} · ${j.salary}</small></td><td>${j.openings}</td><td><b>${j.cv}</b> CVs · ${j.interviews} INT</td><td>${badge(j.status)}</td><td>${badge(j.assignmentStatus)}</td><td>${urgencyBadge(j.urgency)}</td><td>${j.recruiter?person(j.recruiter):"<span class=\"muted\">Awaiting Admin</span>"}</td><td><div class="row-actions"><button class="mini-btn view-job" data-id="${j.id}">View</button>${role==="Admin"?`<button class="mini-btn assign-job" data-id="${j.id}">${j.assignmentStatus==="Pending"?"Assign":"Reassign"}</button>`:""}<button class="mini-btn clone-job" data-id="${j.id}">Clone</button><button class="mini-btn toggle-job" data-id="${j.id}">•••</button></div></td></tr>`).join("") || `<tr><td colspan="10" class="empty">No matching jobs found.</td></tr>`}
+  ${data.map(j=>`<tr class="${role==="Recruiter"?`urgency-row urgency-${j.urgency.toLowerCase()}`:""}" data-filter-type="${j.type}" data-filter-status="${j.status} ${j.assignmentStatus} ${j.urgency}" data-filter-owner="${j.recruiter}" data-filter-date="${j.date}"><td><b>${j.title}</b><br><small>${j.id} · ${j.client} · ${j.department||"General"}</small></td><td>${badge(j.type)}</td><td>${j.location}<br><small>${j.mode} · ${j.salary}</small></td><td>${j.openings}</td><td><b>${j.cv}</b> CVs · ${j.interviews} INT</td><td>${badge(j.status)}</td><td>${badge(j.assignmentStatus)}</td><td>${urgencyBadge(j.urgency)}</td><td>${j.recruiter?person(j.recruiter):"<span class=\"muted\">Awaiting Admin</span>"}</td><td><div class="row-actions"><button class="mini-btn view-job" data-id="${j.id}">View</button>${role==="Admin"?`<button class="mini-btn assign-job" data-id="${j.id}">${j.assignmentStatus==="Pending"?"Assign":"Reassign"}</button>`:""}<button class="mini-btn clone-job" data-id="${j.id}">Clone</button><button class="mini-btn toggle-job" data-id="${j.id}" aria-label="${j.status==="Active"?"Place job on hold":"Set job active"}">${j.status==="Active"?"Hold":"Active"}</button></div></td></tr>`).join("") || `<tr><td colspan="10" class="empty">No matching jobs found.</td></tr>`}
   </tbody></table></div></div>`;
 }
 
@@ -948,11 +971,16 @@ function profilePage() {
     </div>
   </div>
   <div class="grid-2"><form class="card form-card" id="profile-form"><div class="section-title">Personal information</div>
-  ${fields([{label:"Name",name:"name",value:p.name},{label:"Email",name:"email",type:"email",value:p.email},{label:"Mobile number",name:"phone",value:p.phone,placeholder:"+91 98765 43210"},{label:"Location",name:"location",type:"city",value:p.location}])}
+  ${fields([{label:"Name",name:"name",value:p.name},{label:"Email",name:"email",type:"email",value:p.email},{label:"Mobile number",name:"phone",value:p.phone,placeholder:"+91 98765 43210"}])}
+  <div class="form-grid profile-location-grid">
+    <div class="field"><label>State</label><select name="state" id="profile-state" required><option value="">Select state</option>${Object.keys(APP_OPTIONS.locationsByState).map(value=>`<option ${p.state===value?"selected":""}>${value}</option>`).join("")}</select></div>
+    <div class="field"><label>City</label><input name="city" id="profile-city" value="${esc(p.city||"")}" list="profile-city-options" autocomplete="off" placeholder="Start typing a city..." required><datalist id="profile-city-options"></datalist></div>
+    <div class="field full"><label>Locality</label><input name="locality" value="${esc(p.locality||"")}" placeholder="e.g. Indiranagar, Whitefield, Andheri" required><small>Enter your area, neighbourhood, or locality.</small></div>
+  </div>
   <div class="section-title">Compensation</div>
-  <p class="section-help">Enter exact annual values in ₹ LPA. Fixed and variable components are stored separately.</p>
+  <p class="section-help">Enter exact annual values in ₹ LPA. Current CTC is split into fixed and variable components; expected CTC is entered as one total value.</p>
   <div class="form-grid ctc-grid">
-    ${[["Current fixed CTC","currentFixed",p.currentFixed],["Current variable CTC","currentVariable",p.currentVariable],["Expected fixed CTC","expectedFixed",p.expectedFixed],["Expected variable CTC","expectedVariable",p.expectedVariable]].map(([label,name,value])=>`<div class="field"><label>${label}</label><div class="number-suffix"><input name="${name}" type="number" min="0" step="0.01" value="${esc(value)}" placeholder="0.00" required><span>₹ LPA</span></div></div>`).join("")}
+    ${[["Current fixed CTC","currentFixed",p.currentFixed],["Current variable CTC","currentVariable",p.currentVariable],["Expected CTC","expectedCtc",p.expectedCtc]].map(([label,name,value])=>`<div class="field ${name==="expectedCtc"?"full":""}"><label>${label}</label><div class="number-suffix"><input name="${name}" type="number" min="0" step="0.01" value="${esc(value)}" placeholder="0.00" required><span>₹ LPA</span></div></div>`).join("")}
   </div>
   <div class="section-title">Availability</div>
   ${fields([{label:"Notice period",name:"notice",type:"select",options:["Immediate","15 days","30 days","45 days","60 days","90 days"],value:p.notice}])}
@@ -970,7 +998,7 @@ function profilePage() {
   <div class="experience-gap-box" id="experience-gap-box">
     <b>Experience gap detected</b>
     <p id="experience-gap-message"></p>
-    <div class="field"><label>Reason for employment gap</label><textarea name="experienceGapReason" placeholder="Please explain the gap between employment periods">${esc(p.experienceGapReason||"")}</textarea></div>
+    <div class="field"><label id="experience-gap-reason-label">Reason for employment gap</label><textarea name="experienceGapReason" placeholder="Please explain the reason for the detected employment gap">${esc(p.experienceGapReason||"")}</textarea></div>
   </div>
   <div class="section-title">Skills</div>
   ${fields([{label:"Skills",name:"skills",type:"tags",value:p.skills,full:true}])}
@@ -1019,7 +1047,15 @@ function bindPage() {
   $$(".view-job").forEach(x=>x.onclick=()=>showJob(state.jobs.find(j=>j.id===x.dataset.id)));
   $$(".assign-job").forEach(x=>x.onclick=()=>showAssignmentForm(x.dataset.id));
   $$(".clone-job").forEach(x=>x.onclick=()=>{const j=state.jobs.find(j=>j.id===x.dataset.id);state.jobs.unshift({...j,id:nextId("JOB",state.jobs),title:`${j.title} (Copy)`,status:"Draft",assignmentStatus:"Pending",recruiter:"",cv:0,interviews:0,offers:0});addAssignmentNotification({roles:["Admin"],client:j.client,message:`${j.title} (Copy) is awaiting recruiter assignment`});addAssignmentNotification({roles:["Client"],client:j.client,message:`${j.title} (Copy) was created and is pending Admin recruiter assignment`});save();toast("Job cloned as draft and marked Pending");render()});
-  $$(".toggle-job").forEach(x=>x.onclick=()=>{const j=state.jobs.find(j=>j.id===x.dataset.id);j.status=j.status==="Active"?"On Hold":"Active";save();toast(`Job marked ${j.status}`);render()});
+  $$(".toggle-job").forEach(x=>x.onclick=()=>{
+    const j=state.jobs.find(job=>job.id===x.dataset.id);
+    const previousStatus=j.status;
+    j.status=j.status==="Active"?"On Hold":"Active";
+    addAssignmentNotification({roles:["Admin"],recruiter:j.recruiter,client:j.client,message:`${j.title} changed from ${previousStatus} to ${j.status}`});
+    addAssignmentNotification({roles:["Recruiter"],recruiter:j.recruiter,client:j.client,message:`${j.title} is now ${j.status}`});
+    addAssignmentNotification({roles:["Client"],recruiter:j.recruiter,client:j.client,message:`${j.title} is now ${j.status}`});
+    save();toast(`Job marked ${j.status} across linked workspaces`);render();
+  });
   $("#new-candidate")?.addEventListener("click",showCandidateForm);
   $("#upload-cv")?.addEventListener("click",()=>showUpload());
   $$(".view-candidate").forEach(x=>x.onclick=()=>showCandidate(state.candidates.find(c=>c.id===x.dataset.id)));
@@ -1076,17 +1112,17 @@ function bindPage() {
     if(gap.hasGap&&!String(updated.experienceGapReason||"").trim()){toast("Add a reason for the detected experience gap");$('[name="experienceGapReason"]')?.focus();return}
     updated.currentFixed=Number(updated.currentFixed);
     updated.currentVariable=Number(updated.currentVariable);
-    updated.expectedFixed=Number(updated.expectedFixed);
-    updated.expectedVariable=Number(updated.expectedVariable);
+    updated.expectedCtc=Number(updated.expectedCtc);
     updated.lastWorkingDay=updated.notice==="Immediate"?updated.lastWorkingDay:"";
     updated.educationEntries=educationEntries;
     updated.experienceEntries=experienceEntries;
     updated.experienceGapReason=gap.hasGap?String(updated.experienceGapReason||"").trim():"";
+    updated.location=[updated.locality,updated.city,updated.state].filter(Boolean).join(", ");
     updated.completion=profileCompletionPercent(updated);
     Object.assign(state.profile,updated);
     const candidate=state.candidates.find(item=>item.name===roles.Candidate.user);
     const currentTotal=updated.currentFixed+updated.currentVariable;
-    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,notice:updated.notice,skills:updated.skills,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
+    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,skills:updated.skills,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
     const user=state.users.find(item=>item.email===roles.Candidate.email||item.name===roles.Candidate.user);
     if(user)Object.assign(user,{name:updated.name,email:updated.email});
     save();render();toast("Profile updated across all linked workspaces");
@@ -1134,14 +1170,33 @@ function monthIndex(value){
   const [year,month]=value.split("-").map(Number);
   return year*12+month-1;
 }
+function monthYearFromIndex(index){
+  if(!Number.isFinite(index))return "";
+  const year=Math.floor(index/12);
+  const month=index%12+1;
+  return `${["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][month-1]}-${year}`;
+}
 function detectExperienceGaps(entries=collectProfileEntries("experience")){
   const periods=entries.map((entry,index)=>({...entry,index,start:monthIndex(entry.startMonth),end:monthIndex(entry.endMonth)})).filter(entry=>entry.start!==null&&entry.end!==null).sort((a,b)=>a.start-b.start);
   const invalid=periods.filter(entry=>entry.end<entry.start);
   const gaps=[];
-  for(let index=1;index<periods.length;index++){
-    const previous=periods[index-1],current=periods[index];
-    const months=current.start-previous.end-1;
-    if(months>0)gaps.push({months,from:previous.endMonth,to:current.startMonth});
+  const validPeriods=periods.filter(entry=>entry.end>=entry.start);
+  let coverage=validPeriods[0];
+  for(let index=1;index<validPeriods.length;index++){
+    const current=validPeriods[index];
+    const months=current.start-coverage.end-1;
+    if(months>0){
+      gaps.push({
+      months,
+      from:monthYearFromIndex(coverage.end+1),
+      to:monthYearFromIndex(current.start-1),
+      previousCompany:coverage.company||"Previous company",
+      nextCompany:current.company||"Next company"
+      });
+      coverage=current;
+    }else if(current.end>coverage.end){
+      coverage=current;
+    }
   }
   return {hasGap:gaps.length>0,gaps,invalid};
 }
@@ -1158,11 +1213,12 @@ function profileCompletionPercent(profile){
     profileFieldComplete(profile.name),
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(profile.email||"")),
     profileFieldComplete(profile.phone),
-    profileFieldComplete(profile.location),
+    profileFieldComplete(profile.state),
+    profileFieldComplete(profile.city),
+    profileFieldComplete(profile.locality),
     profileFieldComplete(profile.currentFixed),
     profileFieldComplete(profile.currentVariable),
-    profileFieldComplete(profile.expectedFixed),
-    profileFieldComplete(profile.expectedVariable),
+    profileFieldComplete(profile.expectedCtc),
     profileFieldComplete(profile.notice),
     profile.notice!=="Immediate"||profileFieldComplete(profile.lastWorkingDay),
     String(profile.skills||"").split(",").some(skill=>skill.trim()),
@@ -1176,6 +1232,7 @@ function profileFormSnapshot(){
   const form=$("#profile-form");
   if(!form)return state.profile;
   const data=Object.fromEntries(new FormData(form));
+  data.location=[data.locality,data.city,data.state].filter(Boolean).join(", ");
   data.educationEntries=collectProfileEntries("education");
   data.experienceEntries=collectProfileEntries("experience");
   data.lastWorkingDay=data.notice==="Immediate"?(data.lastWorkingDay||""):"";
@@ -1253,7 +1310,7 @@ function buildProfilePdf(profile){
   (profile.educationEntries||[]).forEach(entry=>line(`${entry.degree} | ${entry.year} | ${entry.percentage}`,{bold:true,spaceAfter:3}));
   heading("Compensation");
   line(`Current CTC: Fixed INR ${profile.currentFixed} LPA | Variable INR ${profile.currentVariable} LPA`);
-  line(`Expected CTC: Fixed INR ${profile.expectedFixed} LPA | Variable INR ${profile.expectedVariable} LPA`);
+  line(`Expected CTC: INR ${profile.expectedCtc} LPA`);
   heading("Availability");
   line(`Notice period: ${profile.notice}${profile.notice==="Immediate"&&profile.lastWorkingDay?` | Last working day: ${profile.lastWorkingDay}`:""}`);
   y-=12;rule();
@@ -1310,21 +1367,47 @@ function updateExperienceGapState(){
   $$(".experience-entry").forEach(entry=>entry.classList.remove("entry-invalid"));
   result.invalid.forEach(item=>$$(".experience-entry")[item.index]?.classList.add("entry-invalid"));
   const message=$("#experience-gap-message");
+  const reasonLabel=$("#experience-gap-reason-label");
+  const reasonInput=$('[name="experienceGapReason"]');
   if(result.invalid.length){
     box.classList.add("show","error");
     message.textContent="An end month is earlier than its start month. Correct the highlighted employment entry.";
   }else if(result.hasGap){
     box.classList.add("show");
     box.classList.remove("error");
-    message.textContent=result.gaps.map(gap=>`${gap.months} month${gap.months===1?"":"s"} between ${gap.from} and ${gap.to}`).join("; ");
+    message.innerHTML=result.gaps.map(gap=>`<span>A <b>${gap.months}-month employment gap</b> was detected from <b>${gap.from}</b> to <b>${gap.to}</b>, between <b>${esc(gap.previousCompany)}</b> and <b>${esc(gap.nextCompany)}</b>.</span>`).join("");
+    if(reasonLabel)reasonLabel.textContent=result.gaps.length===1?`Reason for the gap between ${result.gaps[0].previousCompany} and ${result.gaps[0].nextCompany}`:"Reason for the detected employment gaps";
+    if(reasonInput)reasonInput.placeholder=result.gaps.length===1?`Explain the gap from ${result.gaps[0].from} to ${result.gaps[0].to}`:"Explain the reason for each detected employment gap";
   }else{
     box.classList.remove("show","error");
     message.textContent="";
+    if(reasonLabel)reasonLabel.textContent="Reason for employment gap";
+    if(reasonInput)reasonInput.placeholder="Please explain the reason for the detected employment gap";
   }
+}
+function updateProfileCityOptions({clearInvalid=false}={}){
+  const stateSelect=$("#profile-state");
+  const cityInput=$("#profile-city");
+  const list=$("#profile-city-options");
+  if(!stateSelect||!cityInput||!list)return;
+  const cities=APP_OPTIONS.locationsByState[stateSelect.value]||APP_OPTIONS.cities;
+  list.innerHTML=cities.map(city=>`<option value="${esc(city)}"></option>`).join("");
+  if(clearInvalid&&cityInput.value&&!cities.includes(cityInput.value))cityInput.value="";
 }
 function bindProfileEditors(){
   const form=$("#profile-form");
   if(!form)return;
+  const profileState=$("#profile-state");
+  const profileCity=$("#profile-city");
+  profileState?.addEventListener("change",()=>{updateProfileCityOptions({clearInvalid:true});updateProfileCompletionUI()});
+  profileCity?.addEventListener("input",()=>{
+    const matchedState=profileStateForCity(profileCity.value);
+    if(matchedState&&profileState?.value!==matchedState){
+      profileState.value=matchedState;
+      updateProfileCityOptions();
+    }
+  });
+  updateProfileCityOptions();
   const notice=$('[name="notice"]',form);
   const lastWorkingWrap=$("#last-working-day-wrap");
   const updateAvailability=()=>{
