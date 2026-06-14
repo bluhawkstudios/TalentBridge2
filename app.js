@@ -255,6 +255,37 @@ state.externalTalent ||= state.candidates.slice(0,60).map((candidate,index)=>({
   education:["B.Tech","M.Tech","MBA","B.Sc","B.Des"][index%5],source:["LinkedIn","Apollo","GitHub","Indeed","Naukri"][index%5],
   email:index%3===0?candidate.email:"Available after import",phone:index%4===0?candidate.phone:"Available after import"
 }));
+state.externalTalent=state.externalTalent.map((profile,index)=>({
+  ...profile,
+  summary:profile.summary||`${profile.role} with ${profile.experience} years of experience across ${profile.skills}. Experienced in delivering outcomes in fast-paced teams.`,
+  experienceEntries:profile.experienceEntries||[
+    {company:profile.currentCompany,designation:profile.role,startMonth:`${2018+(index%4)}-01`,endMonth:"2026-06"},
+    {company:["Tech Mahindra","Cognizant","Capgemini","HCLTech"][index%4],designation:index%2?"Consultant":"Specialist",startMonth:`${2014+(index%3)}-06`,endMonth:`${2017+(index%4)}-12`}
+  ],
+  educationEntries:profile.educationEntries||[{degree:profile.education,institute:["IIT Delhi","Pune University","Anna University","Mumbai University"][index%4],year:String(2012+(index%8)),percentage:`${72+(index%18)}%`}]
+}));
+state.candidates=state.candidates.map((candidate,index)=>{
+  const isProfileCandidate=candidate.name===state.profile.name||candidate.email===state.profile.email;
+  const sourcedProfile=state.externalTalent.find(profile=>profile.id===candidate.sourceProfileId);
+  return {
+    ...candidate,
+    summary:candidate.summary||(isProfileCandidate?`${state.profile.experienceEntries?.[0]?.designation||candidate.role} experienced in ${state.profile.skills}.`:sourcedProfile?.summary||`${candidate.role} with experience in ${candidate.skills}, currently available in ${candidate.location}.`),
+    experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||[{company:candidate.client||"Previous employer",designation:candidate.role,startMonth:`${2018+(index%5)}-01`,endMonth:"2026-06"}]),
+    educationEntries:candidate.educationEntries||(isProfileCandidate?state.profile.educationEntries:sourcedProfile?.educationEntries||[{degree:["B.Tech","MBA","M.Sc","B.Des"][index%4],institute:["State University","National Institute of Technology","Business School","Design Institute"][index%4],year:String(2014+(index%9)),percentage:`${70+(index%20)}%`}])
+  };
+});
+const talentBridgeProfiles=state.candidates.map((candidate,index)=>({
+  id:`TBD-${candidate.id}`,candidateId:candidate.id,name:candidate.name,role:candidate.role,skills:candidate.skills,
+  location:candidate.location,score:candidate.score,experience:Math.max(1,candidate.experienceEntries?.length?candidate.experienceEntries.length*3:2+(index%10)),
+  availability:candidate.notice,currentCompany:candidate.experienceEntries?.[0]?.company||candidate.client||"Not provided",
+  education:candidate.educationEntries?.[0]?.degree||"Not provided",source:"TalentBridge Database",
+  email:candidate.email,phone:candidate.phone,summary:candidate.summary,
+  experienceEntries:candidate.experienceEntries,educationEntries:candidate.educationEntries
+}));
+state.externalTalent=[
+  ...state.externalTalent.filter(profile=>profile.source!=="TalentBridge Database"),
+  ...talentBridgeProfiles
+];
 state.aiSourcingResults ||= state.externalTalent.filter(profile=>state.integrations.some(item=>item.name===profile.source&&item.connected&&item.enabled)).slice(0,20).map(profile=>profile.id);
 state.sourcingSearches ||= [];
 state.assignmentNotifications ||= [];
@@ -273,6 +304,7 @@ let teamChatOpen = false;
 let activeRecruiter = "Priya Nair";
 let theme = localStorage.getItem("talentbridge-theme") || "light";
 let interviewView = "Upcoming";
+let aiSourcingView = "Grid";
 let pageFilterState = {};
 document.documentElement.dataset.theme = theme;
 
@@ -873,8 +905,7 @@ function aiSourcingPage() {
   const results=state.aiSourcingResults.map(id=>state.externalTalent.find(profile=>profile.id===id)).filter(Boolean);
   const visibleCandidates=isAdmin?state.candidates:roleCandidates("Recruiter");
   const importedNames=new Set(visibleCandidates.map(candidate=>candidate.name.toLowerCase()));
-  return `${pageHead("AI Sourcing","Discover and qualify talent across connected internet sources using AI.",`${isAdmin?`<button class="btn btn-secondary" data-go="integrations">⚡ Manage integrations</button>`:""}<button class="btn btn-primary" id="run-ai-source">✦ Source candidates</button>`)}
-  ${kpis([["External profiles",state.externalTalent.length,"Available source records"],["Connected sources",connected.length,isAdmin?`${state.integrations.length} integrations configured`:"Managed by Admin"],["AI matches",results.length,"Current search results"],["Imported profiles",state.externalTalent.filter(profile=>importedNames.has(profile.name.toLowerCase())).length,isAdmin?"Added to TALENTBRIDGE":"Added to your pipeline"]])}
+  return `${pageHead(`<span class="ai-color-title">AI Sourcing</span>`,"Discover and qualify talent across connected internet sources using AI.",`${isAdmin?`<button class="btn btn-secondary" data-go="integrations">⚡ Manage integrations</button>`:""}<div class="ai-source-cta"><small>Source candidates based on ${isAdmin?"active jobs":"jobs assigned to you"}</small><button class="btn btn-primary" id="run-ai-source">✦ AI Candidate Source</button></div>`)}
   <form class="card ai-source-filters" id="ai-source-form">
     <div class="panel-head"><div><h3>AI talent search</h3><p>Combine role context with detailed talent criteria.</p></div><button type="button" class="mini-btn" id="clear-ai-source">Clear filters</button></div>
     <div class="ai-filter-grid">
@@ -889,13 +920,13 @@ function aiSourcingPage() {
       <div class="field"><label>Current company</label><input name="company" placeholder="e.g. Infosys"></div>
       <div class="field"><label>Education</label><select name="education"><option value="">Any qualification</option>${["B.Tech","M.Tech","MBA","B.Sc","B.Des"].map(value=>`<option>${value}</option>`).join("")}</select></div>
     </div>
-    <div class="source-provider-filter"><b>Search providers</b><div>${state.integrations.filter(item=>item.id!=="custom").map(item=>`<label class="source-check ${item.connected&&item.enabled?"":"disabled"}"><input type="checkbox" name="sources" value="${item.name}" ${item.connected&&item.enabled?"checked":"disabled"}><span>${item.name}</span><small>${item.connected&&item.enabled?"Available":isAdmin?"Connect in Integrations":"Unavailable · Admin managed"}</small></label>`).join("")}</div></div>
+    <div class="source-provider-filter"><div class="source-provider-title"><b>Search Sources</b><small>Select one or more databases for profiles matching ${isAdmin?"active requirements":"your assigned jobs"}.</small></div><div><label class="source-check"><input type="checkbox" name="sources" value="TalentBridge Database" checked><span>TalentBridge Database</span><small>Available · Internal profiles</small></label>${state.integrations.filter(item=>item.id!=="custom").map(item=>`<label class="source-check ${item.connected&&item.enabled?"":"disabled"}"><input type="checkbox" name="sources" value="${item.name}" ${item.connected&&item.enabled?"checked":"disabled"}><span>${item.name}</span><small>${item.connected&&item.enabled?"Available":isAdmin?"Connect in Integrations":"Unavailable · Admin managed"}</small></label>`).join("")}</div></div>
     <div class="ai-search-actions"><label class="check"><input type="checkbox" name="verifiedOnly"> Verified contact details only</label><button type="submit" class="btn btn-primary">✦ Run AI sourcing</button></div>
   </form>
-  <div class="card panel ai-results-panel"><div class="panel-head"><div><h3>AI matched profiles</h3><p>${results.length} results ranked by relevance across ${connected.length} connected sources.</p></div>${state.sourcingSearches.length?`<small>Last search: ${state.sourcingSearches[0].time}</small>`:""}</div>
-  <div class="ai-profile-grid">${results.map(profile=>{
+  <div class="card panel ai-results-panel"><div class="panel-head"><div><h3>AI matched profiles</h3><p>${results.length} results ranked by relevance across ${connected.length} connected sources.</p></div><div class="ai-result-head-actions">${state.sourcingSearches.length?`<small>Last search: ${state.sourcingSearches[0].time}</small>`:""}<div class="view-switch"><button class="${aiSourcingView==="Grid"?"active":""}" data-ai-view="Grid">Grid</button><button class="${aiSourcingView==="List"?"active":""}" data-ai-view="List">List</button></div></div></div>
+  <div class="ai-profile-grid ${aiSourcingView==="List"?"list-view":""}">${results.map(profile=>{
     const imported=importedNames.has(profile.name.toLowerCase());
-    return `<article class="ai-profile-card"><div class="ai-profile-top">${person(profile.name,profile.role)}${badge(profile.source)}</div><div class="ai-score"><span><b>${profile.score}%</b> AI match</span><div class="progress"><span style="width:${profile.score}%"></span></div></div><div class="ai-profile-details"><span>${profile.experience} yrs experience</span><span>${profile.location}</span><span>${profile.currentCompany}</span><span>${profile.availability}</span></div><div class="display-tags">${profile.skills.split(",").slice(0,4).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div><div class="ai-profile-contact"><small>${esc(profile.email)}</small><small>${esc(profile.phone)}</small></div><div class="row-actions"><button class="btn btn-secondary view-external-profile" data-id="${profile.id}">View profile</button><button class="btn btn-primary import-external-profile" data-id="${profile.id}" ${imported?"disabled":""}>${imported?"Imported":"Add to pipeline"}</button></div></article>`;
+    return `<article class="ai-profile-card"><div class="ai-profile-top">${person(profile.name,profile.role)}${badge(profile.source)}</div><div class="ai-score"><span><b>${profile.score}%</b> AI match</span><div class="progress"><span style="width:${profile.score}%"></span></div></div><div class="ai-profile-details"><span>${profile.experience} yrs experience</span><span>${profile.location}</span><span>${profile.currentCompany}</span><span>${profile.availability}</span></div><div class="display-tags">${profile.skills.split(",").slice(0,4).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div><div class="ai-profile-contact"><small>${esc(profile.email)}</small><small>${esc(profile.phone)}</small></div><div class="row-actions"><button class="btn btn-secondary view-external-profile" data-id="${profile.id}">View profile</button><button class="btn btn-primary import-external-profile" data-id="${profile.id}">${imported?"Add to another job":"Add to pipeline"}</button></div></article>`;
   }).join("")||`<div class="empty"><div class="empty-icon">✦</div><h3>No matching profiles</h3><p>Change the search criteria or connect more data sources.</p></div>`}</div></div>`;
 }
 
@@ -1086,9 +1117,10 @@ function bindPage() {
   $("#new-campaign")?.addEventListener("click",showCampaignForm);
   $("#ai-source-form")?.addEventListener("submit",event=>{event.preventDefault();runAiSourcing()});
   $("#run-ai-source")?.addEventListener("click",()=>runAiSourcing());
+  $$("[data-ai-view]").forEach(button=>button.onclick=()=>{aiSourcingView=button.dataset.aiView;render()});
   $("#clear-ai-source")?.addEventListener("click",()=>{state.aiSourcingResults=state.externalTalent.slice(0,20).map(profile=>profile.id);render();toast("AI sourcing filters cleared")});
   $$(".view-external-profile").forEach(button=>button.onclick=()=>showExternalProfile(button.dataset.id));
-  $$(".import-external-profile").forEach(button=>button.onclick=()=>importExternalProfile(button.dataset.id));
+  $$(".import-external-profile").forEach(button=>button.onclick=()=>showPipelineAssignment(button.dataset.id));
   $$(".configure-integration").forEach(button=>button.onclick=()=>showIntegrationForm(button.dataset.id));
   $$(".test-integration").forEach(button=>button.onclick=()=>{const item=state.integrations.find(integration=>integration.id===button.dataset.id);item.lastSync="Just now";save();render();toast(`${item.name} connection test successful`)});
   $$(".toggle-integration").forEach(input=>input.onchange=()=>{const item=state.integrations.find(integration=>integration.id===input.dataset.id);item.enabled=input.checked;save();render();toast(`${item.name} ${item.enabled?"enabled":"disabled"} for AI Sourcing`)});
@@ -1122,7 +1154,7 @@ function bindPage() {
     Object.assign(state.profile,updated);
     const candidate=state.candidates.find(item=>item.name===roles.Candidate.user);
     const currentTotal=updated.currentFixed+updated.currentVariable;
-    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,skills:updated.skills,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
+    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,skills:updated.skills,experienceEntries:updated.experienceEntries,educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
     const user=state.users.find(item=>item.email===roles.Candidate.email||item.name===roles.Candidate.user);
     if(user)Object.assign(user,{name:updated.name,email:updated.email});
     save();render();toast("Profile updated across all linked workspaces");
@@ -1297,7 +1329,7 @@ function buildProfilePdf(profile){
   rule();
   heading("Professional Profile");
   const months=(profile.experienceEntries||[]).map(item=>monthIndex(item.endMonth)-monthIndex(item.startMonth)+1).filter(Number.isFinite).reduce((sum,value)=>sum+Math.max(0,value),0);
-  line(`${profile.experienceEntries?.[0]?.designation||"Professional"} with ${months?`${Math.max(1,Math.floor(months/12))}+ years of experience`:"relevant professional experience"}. Core skills include ${profile.skills||"skills listed below"}.`);
+  line(profile.summary||`${profile.experienceEntries?.[0]?.designation||profile.role||"Professional"} with ${months?`${Math.max(1,Math.floor(months/12))}+ years of experience`:"relevant professional experience"}. Core skills include ${profile.skills||"skills listed below"}.`);
   heading("Skills");
   line(profile.skills||"Not provided");
   heading("Professional Experience");
@@ -1307,12 +1339,15 @@ function buildProfilePdf(profile){
   });
   if(profile.experienceGapReason)line(`Employment gap note: ${profile.experienceGapReason}`,{size:9,spaceAfter:3});
   heading("Education");
-  (profile.educationEntries||[]).forEach(entry=>line(`${entry.degree} | ${entry.year} | ${entry.percentage}`,{bold:true,spaceAfter:3}));
-  heading("Compensation");
-  line(`Current CTC: Fixed INR ${profile.currentFixed} LPA | Variable INR ${profile.currentVariable} LPA`);
-  line(`Expected CTC: INR ${profile.expectedCtc} LPA`);
+  (profile.educationEntries||[]).forEach(entry=>line([entry.degree,entry.institute,entry.year,entry.percentage].filter(Boolean).join(" | "),{bold:true,spaceAfter:3}));
+  if(profile.currentFixed!==undefined||profile.ctc||profile.expectedCtc!==undefined){
+    heading("Compensation");
+    if(profile.currentFixed!==undefined)line(`Current CTC: Fixed INR ${profile.currentFixed} LPA | Variable INR ${profile.currentVariable||0} LPA`);
+    else if(profile.ctc)line(`Current CTC / rate: ${profile.ctc}`);
+    if(profile.expectedCtc!==undefined)line(`Expected CTC: INR ${profile.expectedCtc} LPA`);
+  }
   heading("Availability");
-  line(`Notice period: ${profile.notice}${profile.notice==="Immediate"&&profile.lastWorkingDay?` | Last working day: ${profile.lastWorkingDay}`:""}`);
+  line(`Notice period: ${profile.notice||profile.availability||"Not provided"}${profile.notice==="Immediate"&&profile.lastWorkingDay?` | Last working day: ${profile.lastWorkingDay}`:""}`);
   y-=12;rule();
   line("Generated from TALENTBRIDGE Candidate Profile",{size:8,leading:12});
   newPage();
@@ -1352,6 +1387,27 @@ function downloadProfileCv(profile){
   link.remove();
   setTimeout(()=>URL.revokeObjectURL(url),1000);
   toast("Print-ready CV downloaded");
+}
+function viewResumePdf(profile,{visible=true}={}){
+  const pdfProfile={...profile};
+  if(!visible){
+    pdfProfile.name="Protected candidate";
+    pdfProfile.email="Hidden until shortlisted";
+    pdfProfile.phone="Hidden until shortlisted";
+  }
+  const blob=buildProfilePdf(pdfProfile);
+  const url=URL.createObjectURL(blob);
+  const opened=window.open(url,"_blank");
+  if(!opened){
+    const link=document.createElement("a");
+    link.href=url;
+    link.target="_blank";
+    link.rel="noopener";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  }
+  setTimeout(()=>URL.revokeObjectURL(url),60000);
 }
 function refreshProfileEntryLabels(type){
   $$(`.${type}-entry`).forEach((entry,index)=>{
@@ -1692,12 +1748,26 @@ function showAssignmentForm(id){
   };
 }
 function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div><h3>Required skills</h3>${skillTags(j.skills)}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>Source candidates</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":"candidates";render()}) }
+function miniResumeMarkup(profile,{visible=true,external=false}={}){
+  const experience=profile.experienceEntries||[];
+  const education=profile.educationEntries||[];
+  const email=external?profile.email:(visible?profile.email:maskedContact(profile.email));
+  const phone=external?profile.phone:(visible?profile.phone:maskedContact(profile.phone));
+  return `<div class="mini-resume">
+    <section class="mini-resume-summary"><h3>Professional summary</h3><p>${esc(profile.summary||`${profile.role} experienced in ${profile.skills}.`)}</p></section>
+    <section><h3>Core skills</h3><div class="display-tags">${String(profile.skills||"").split(",").filter(Boolean).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div></section>
+    <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div></section>
+    <section><h3>Education</h3><div class="resume-education">${education.map(entry=>`<div><b>${esc(entry.degree||"Qualification")}</b><span>${esc(entry.institute||"Institute not specified")}</span><small>${esc(entry.year||"Year not provided")}${entry.percentage?` · ${esc(entry.percentage)}`:""}</small></div>`).join("")||`<p class="muted">Education details are not available.</p>`}</div></section>
+    <section class="resume-facts"><h3>Additional details</h3><div><p><b>Location</b><span>${esc(profile.location||"Not provided")}</span></p><p><b>Availability</b><span>${esc(profile.notice||profile.availability||"Not provided")}</span></p><p><b>Email</b><span>${esc(email||"Not provided")}</span></p><p><b>Phone</b><span>${esc(phone||"Not provided")}</span></p></div></section>
+  </div>`;
+}
 function showCandidate(c){
   const visible=revealCandidateIdentity(c);
   const isClientReview=session.role==="Client"&&currentPage==="cv-review";
   const displayName=candidateDisplayName(c);
-  modal(visible?displayName:"Protected candidate profile",`${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div style="display:flex;gap:8px;margin:18px 0">${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div><div class="grid-equal"><div><small>Current CTC / rate</small><h3>${c.ctc}</h3></div><div><small>Availability</small><h3>${c.notice}</h3></div></div><h3>Skills</h3>${skillTags(c.skills)}<h3>Personal information</h3><p><b>Mobile number:</b> ${visible?esc(c.phone):maskedContact(c.phone)}<br><b>Email:</b> ${visible?esc(c.email):maskedContact(c.email)}</p>${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select.</p>`:""}<div class="timeline">${["Sourced","Screened","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${i<3?"done":i===3?"current":""}"><span class="stage-dot">${i<3?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
+  modal(visible?displayName:"Protected candidate profile",`<div class="candidate-resume-head">${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div>${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div></div><div class="resume-highlight-grid"><div><small>Applied role</small><b>${esc(c.role)}</b></div><div><small>Current CTC / rate</small><b>${esc(c.ctc)}</b></div></div>${miniResumeMarkup(c,{visible})}${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select. Resume skills, experience, and education remain available for review.</p>`:""}<div class="timeline">${["Sourced","Screened","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${i<3?"done":i===3?"current":""}"><span class="stage-dot">${i<3?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="resume-pdf-link" id="view-candidate-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
   $(".modal-close-2").onclick=closeModal;
+  $("#view-candidate-resume")?.addEventListener("click",()=>viewResumePdf(c,{visible}));
   $("#candidate-advance")?.addEventListener("click",()=>{closeModal();moveCandidate(c.id)});
 }
 function showCandidateForm(){
@@ -2025,7 +2095,9 @@ function runAiSourcing(){
   const data=Object.fromEntries(new FormData(form));
   const sources=new FormData(form).getAll("sources");
   const job=state.jobs.find(item=>item.id===data.jobId);
-  const terms=[data.keywords,data.skills,job?.title,job?.skills].filter(Boolean).join(" ").toLowerCase().replace(/\b(and|or|not)\b|["()]/g," ").split(/[\s,]+/).filter(term=>term.length>2);
+  const scopedJobs=job?[job]:(session.role==="Recruiter"?roleJobs("Recruiter").filter(item=>item.status==="Active"&&item.assignmentStatus==="Assigned"):state.jobs.filter(item=>item.status==="Active"));
+  const jobContext=scopedJobs.flatMap(item=>[item.title,item.skills]).join(" ");
+  const terms=[data.keywords,data.skills,jobContext].filter(Boolean).join(" ").toLowerCase().replace(/\b(and|or|not)\b|["()]/g," ").split(/[\s,]+/).filter(term=>term.length>2);
   const min=Number(data.minExperience)||0;
   const max=data.maxExperience?Number(data.maxExperience):Infinity;
   const minScore=Number(data.minScore)||0;
@@ -2042,27 +2114,60 @@ function runAiSourcing(){
   state.aiSourcingResults=results.map(profile=>profile.id);
   state.sourcingSearches.unshift({id:`SRC-${Date.now()}`,time:"Just now",criteria:data,resultCount:results.length,sources});
   state.sourcingSearches=state.sourcingSearches.slice(0,20);
-  save();render();toast(`${results.length} AI-matched profiles found across ${sources.length} sources`);
+  save();render();toast(`${results.length} AI-matched profiles found for ${job?job.title:`${scopedJobs.length} ${session.role==="Recruiter"?"assigned":"active"} jobs`}`);
 }
 function showExternalProfile(id){
   const profile=state.externalTalent.find(item=>item.id===id);
   if(!profile)return;
-  modal(`${profile.name} · ${profile.source}`,`<div class="external-profile-detail"><div>${person(profile.name,profile.role)}<div class="display-tags">${profile.skills.split(",").map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div></div><div class="grid-equal"><div class="card panel"><small>AI match</small><h2>${profile.score}%</h2></div><div class="card panel"><small>Experience</small><h2>${profile.experience} years</h2></div></div><div class="form-grid"><p><b>Location</b><br>${profile.location}</p><p><b>Current company</b><br>${profile.currentCompany}</p><p><b>Availability</b><br>${profile.availability}</p><p><b>Education</b><br>${profile.education}</p><p><b>Email</b><br>${profile.email}</p><p><b>Phone</b><br>${profile.phone}</p></div><div class="privacy-note">Profile data is marked as sourced from ${profile.source}. Confirm provider terms and candidate consent requirements before outreach.</div></div>`,`<button class="btn btn-secondary modal-close-2">Close</button><button class="btn btn-primary" id="import-profile-modal">Add to pipeline</button>`);
+  modal(`${profile.name} · ${profile.source}`,`<div class="candidate-resume-head">${person(profile.name,profile.role)}<div>${badge(profile.source)}${badge(`${profile.score}% AI match`)}${badge(`${profile.experience} years`)}</div></div>${miniResumeMarkup(profile,{external:true})}<div class="privacy-note">Profile data is marked as sourced from ${profile.source}. Confirm provider terms and candidate consent requirements before outreach.</div>`,`<button class="resume-pdf-link" id="view-external-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button><button class="btn btn-primary" id="import-profile-modal">Add to pipeline</button>`);
   $(".modal-close-2").onclick=closeModal;
-  $("#import-profile-modal").onclick=()=>{closeModal();importExternalProfile(id)};
+  $("#view-external-resume").onclick=()=>viewResumePdf(profile);
+  $("#import-profile-modal").onclick=()=>{closeModal();showPipelineAssignment(id)};
 }
-function importExternalProfile(id){
+function showPipelineAssignment(id){
   const profile=state.externalTalent.find(item=>item.id===id);
   if(!profile)return;
-  if(state.candidates.some(candidate=>candidate.name.toLowerCase()===profile.name.toLowerCase())){toast("This profile is already in the candidate database");return}
   const selectedJobId=$("#ai-source-form [name='jobId']")?.value;
   const eligibleJobs=session.role==="Recruiter"?roleJobs("Recruiter").filter(item=>item.status==="Active"&&item.assignmentStatus==="Assigned"):state.jobs.filter(item=>item.status==="Active");
-  const job=eligibleJobs.find(item=>item.id===selectedJobId)||eligibleJobs.find(item=>item.title===profile.role)||eligibleJobs[0];
-  if(!job){toast("No active assigned job is available for this profile");return}
-  const candidate={id:nextId("CAN",state.candidates),name:profile.name,email:profile.email.startsWith("Available")?"Contact pending":profile.email,phone:profile.phone.startsWith("Available")?"Contact pending":profile.phone,jobId:job?.id||"",role:job?.title||profile.role,type:job?.type||"Permanent",client:job?.client||"Unassigned",recruiter:job?.recruiter||"",stage:"Sourced",score:profile.score,location:profile.location,notice:profile.availability,ctc:"Not shared",skills:profile.skills,source:profile.source,sourceProfileId:profile.id};
+  if(!eligibleJobs.length){toast("No active job is available for this profile");return}
+  const preferredJob=eligibleJobs.find(item=>item.id===selectedJobId)||eligibleJobs.find(item=>item.title===profile.role)||eligibleJobs[0];
+  const companies=[...new Set(eligibleJobs.map(job=>job.client))].sort();
+  modal(`Add ${profile.name} to pipeline`,`<form id="pipeline-assignment-form">
+    <div class="pipeline-assignment-intro">${person(profile.name,`${profile.source} · ${profile.score}% AI match`)}<p>Select the company and job this resume should be associated with before continuing recruitment activity.</p></div>
+    <div class="form-grid">
+      <div class="field"><label>Company</label><select name="company" id="pipeline-company" required>${companies.map(company=>`<option ${company===preferredJob.client?"selected":""}>${esc(company)}</option>`).join("")}</select></div>
+      <div class="field"><label>Job</label><select name="jobId" id="pipeline-job" required></select></div>
+      <div class="field full"><label>Assignment note</label><textarea name="note" placeholder="Add sourcing notes or next actions (optional)"></textarea></div>
+    </div>
+    <div class="privacy-note">The resume will appear in the selected company and job pipeline for all linked users.</div>
+  </form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="confirm-pipeline-assignment">Add to pipeline</button>`);
+  const companySelect=$("#pipeline-company");
+  const jobSelect=$("#pipeline-job");
+  const updateJobs=()=>{
+    const jobs=eligibleJobs.filter(job=>job.client===companySelect.value);
+    jobSelect.innerHTML=jobs.map(job=>`<option value="${job.id}" ${job.id===preferredJob.id?"selected":""}>${job.id} · ${esc(job.title)} · ${esc(job.type)}</option>`).join("");
+  };
+  companySelect.onchange=updateJobs;
+  updateJobs();
+  $(".modal-close-2").onclick=closeModal;
+  $("#confirm-pipeline-assignment").onclick=()=>{
+    const form=$("#pipeline-assignment-form");if(!form.reportValidity())return;
+    const data=Object.fromEntries(new FormData(form));
+    const job=eligibleJobs.find(item=>item.id===data.jobId&&item.client===data.company);
+    if(!job){toast("Select a valid company and job");return}
+    importExternalProfile(id,job,data.note);
+  };
+}
+function importExternalProfile(id,job,note=""){
+  const profile=state.externalTalent.find(item=>item.id===id);
+  if(!profile||!job)return;
+  if(state.candidates.some(candidate=>candidate.sourceProfileId===profile.id&&candidate.jobId===job.id)){toast("This resume is already associated with the selected job");return}
+  const candidate={id:nextId("CAN",state.candidates),name:profile.name,email:profile.email.startsWith("Available")?"Contact pending":profile.email,phone:profile.phone.startsWith("Available")?"Contact pending":profile.phone,jobId:job?.id||"",role:job?.title||profile.role,type:job?.type||"Permanent",client:job?.client||"Unassigned",recruiter:job?.recruiter||"",stage:"Sourced",score:profile.score,location:profile.location,notice:profile.availability,ctc:"Not shared",skills:profile.skills,summary:profile.summary,experienceEntries:profile.experienceEntries,educationEntries:profile.educationEntries,source:profile.source,sourceProfileId:profile.id};
+  candidate.sourcingNote=note;
   state.candidates.unshift(candidate);
-  addAssignmentNotification({roles:["Admin","Recruiter"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.name} was sourced from ${profile.source} and added to ${candidate.role}`});
-  save();render();toast(`${profile.name} added to the shared candidate pipeline`);
+  addAssignmentNotification({roles:["Admin","Recruiter"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.name} was sourced from ${profile.source} and associated with ${job.client} · ${job.title}`});
+  addAssignmentNotification({roles:["Client"],recruiter:candidate.recruiter,client:candidate.client,message:`A new sourced profile was added to ${job.title}`});
+  save();closeModal();render();toast(`${profile.name} added to ${job.client} · ${job.title}`);
 }
 function showIntegrationForm(id=""){
   const existing=state.integrations.find(item=>item.id===id);
