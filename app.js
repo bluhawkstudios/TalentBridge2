@@ -28,7 +28,7 @@ const INTERVIEW_ROUNDS=["Recruiter Screen","Client L1","L2 – Portfolio","L3 �
 const roles = {
   Client: {
     user: "Ananya Sharma", company: "Northstar Systems", email: "client@talentos.ai",
-    nav: [["dashboard","Dashboard","⌂"],["job-type","Post a Job","＋"],["jobs","My Job Listings","▤"],["cv-review","CV Review","◫"],["interviews","Interviews","◷"],["offers","Offers & Contracts","◇"],["documents","Documents","▱"]]
+    nav: [["ai-recruiter","AI Recruiter","✦"],["dashboard","Dashboard","⌂"],["job-type","Post a Job","＋"],["jobs","My Job Listings","▤"],["cv-review","CV Review","◫"],["interviews","Interviews","◷"],["offers","Offers & Contracts","◇"],["documents","Documents","▱"]]
   },
   Admin: {
     user: "Arjun Mehta", company: "TalentOS Admin", email: "admin@talentos.ai",
@@ -290,6 +290,14 @@ state.aiSourcingResults ||= state.externalTalent.filter(profile=>state.integrati
 state.sourcingSearches ||= [];
 state.assignmentNotifications ||= [];
 state.campaigns ||= [];
+state.clientAiRecruiter ||= {
+  step:"idle",
+  draft:{},
+  messages:[{from:"ai",text:"How may I help you? I can create a job description with you or answer questions about Northstar Systems' hiring activity."}]
+};
+state.clientAiRecruiter.messages ||= [{from:"ai",text:"How may I help you?"}];
+state.clientAiRecruiter.draft ||= {};
+state.clientAiRecruiter.step ||= "idle";
 state.candidates.forEach(candidate=>candidate.clientReviewStatus ||= "Awaiting Review");
 state.jobs.forEach(job=>{
   job.assignmentStatus ||= job.recruiter ? "Assigned" : "Pending";
@@ -298,7 +306,7 @@ state.jobs.forEach(job=>{
 });
 localStorage.setItem("talentos-state",JSON.stringify(state));
 let session = JSON.parse(localStorage.getItem("talentos-session") || "null");
-let currentPage = "dashboard";
+let currentPage = session?.role==="Client" ? "ai-recruiter" : "dashboard";
 let filter = "All";
 let teamChatOpen = false;
 let activeRecruiter = "Priya Nair";
@@ -522,7 +530,7 @@ function renderLogin() {
     selected = b.dataset.role; $$(".role-card").forEach(x => x.classList.toggle("active", x===b));
     $("#login-email").value = roles[selected].email; $("#login-btn").textContent = `Enter ${selected} workspace →`;
   });
-  $("#login-btn").onclick = () => { session = {role:selected}; currentPage="dashboard"; localStorage.setItem("talentos-session",JSON.stringify(session)); render(); };
+  $("#login-btn").onclick = () => { session = {role:selected}; currentPage=selected==="Client"?"ai-recruiter":"dashboard"; localStorage.setItem("talentos-session",JSON.stringify(session)); render(); };
 }
 
 function bindShell() {
@@ -737,6 +745,7 @@ function person(name, sub="") {
 
 function renderPage() {
   const r = session.role;
+  if (currentPage==="ai-recruiter" && r==="Client") return aiRecruiterPage();
   if (currentPage==="dashboard") return dashboard(r);
   if (currentPage==="jobs") return jobsPage(r);
   if (currentPage==="candidates" || currentPage==="cv-review" || currentPage==="sourcing") return candidatesPage(r,currentPage);
@@ -755,6 +764,161 @@ function renderPage() {
   if (currentPage==="applications") return applicationsPage();
   if (currentPage==="documents") return documentsPage();
   return `<div class="empty"><div class="empty-icon">◇</div><h3>${titleFor(currentPage)}</h3><p>This workspace is ready.</p></div>`;
+}
+
+function clientActivitySnapshot(){
+  const jobs=roleJobs("Client");
+  const candidates=roleCandidates("Client");
+  const interviews=roleInterviews("Client");
+  return {
+    jobs,
+    candidates,
+    interviews,
+    activeJobs:jobs.filter(job=>job.status==="Active").length,
+    pendingJobs:jobs.filter(job=>job.assignmentStatus==="Pending").length,
+    cvReview:candidates.filter(candidate=>candidate.stage==="Client Review"||candidate.clientReviewStatus==="Awaiting Review").length,
+    confirmedInterviews:interviews.filter(interview=>interview.status==="Confirmed").length,
+    pendingInterviews:interviews.filter(interview=>interview.status==="Pending").length,
+    offers:candidates.filter(candidate=>["Offered","Joined"].includes(candidate.stage)).length,
+    joined:candidates.filter(candidate=>candidate.stage==="Joined").length
+  };
+}
+function clientActivitySummary(){
+  const activity=clientActivitySnapshot();
+  return `${roles.Client.company} currently has ${activity.activeJobs} active job${activity.activeJobs===1?"":"s"}, ${activity.candidates.length} linked candidate profile${activity.candidates.length===1?"":"s"}, ${activity.cvReview} CV${activity.cvReview===1?"":"s"} needing review, ${activity.confirmedInterviews} confirmed interview${activity.confirmedInterviews===1?"":"s"}, and ${activity.offers} candidate${activity.offers===1?"":"s"} at offer or joining stage. ${activity.pendingJobs?`${activity.pendingJobs} job${activity.pendingJobs===1?" is":"s are"} waiting for Admin recruiter assignment.`:"All current jobs have recruiter coverage."}`;
+}
+function aiRecruiterActivityChart(){
+  const activity=clientActivitySnapshot();
+  const items=[["Active jobs",activity.activeJobs],["CV review",activity.cvReview],["Interviews",activity.interviews.length],["Offers",activity.offers],["Joined",activity.joined]];
+  const max=Math.max(...items.map(item=>item[1]),1);
+  return `<div class="ai-recruiter-chart">${items.map(([label,value])=>`<div><span>${label}</span><i><b style="width:${Math.max(5,Math.round(value/max*100))}%"></b></i><strong>${value}</strong></div>`).join("")}</div>`;
+}
+function aiRecruiterDraftSummary(draft=state.clientAiRecruiter.draft){
+  return `<div class="ai-jd-summary"><h3>${esc(draft.title||"New role")}</h3><div><span><small>Engagement</small><b>${esc(draft.type||"Permanent")}</b></span><span><small>Department</small><b>${esc(draft.department||"General")}</b></span><span><small>Location</small><b>${esc(draft.location||"Not specified")} · ${esc(draft.mode||"Hybrid")}</b></span><span><small>Openings</small><b>${esc(draft.openings||1)}</b></span><span><small>Experience</small><b>${esc(draft.experience||"Not specified")}</b></span><span><small>Salary</small><b>${esc(draft.salary||"To be discussed")}</b></span></div><p><b>Skills:</b> ${esc(draft.skills||"Not specified")}</p><p><b>Key responsibilities:</b> ${esc(draft.responsibilities||"Not specified")}</p></div>`;
+}
+function aiRecruiterMessageMarkup(message){
+  const content=message.kind==="chart"?`${esc(message.text)}${aiRecruiterActivityChart()}`:message.kind==="permission"?`${esc(message.text)}${aiRecruiterDraftSummary(message.draft)}<div class="ai-permission-actions"><button class="btn btn-secondary" id="ai-edit-jd">Edit details</button><button class="btn btn-primary" id="ai-generate-job">Yes, generate job</button></div>`:message.kind==="created"?`${esc(message.text)}<div class="ai-created-job"><b>${esc(message.jobId)} · ${esc(message.title)}</b><span>Pending Admin recruiter assignment</span><button class="mini-btn" data-go="jobs">Open My Job Listings</button></div>`:esc(message.text);
+  return `<div class="ai-recruiter-message ${message.from==="user"?"user":"assistant"}"><span class="ai-message-avatar">${message.from==="user"?initials(roles.Client.user):"AI"}</span><div>${content}<small>${message.time||"Just now"}</small></div></div>`;
+}
+function aiRecruiterQuickReplies(){
+  const step=state.clientAiRecruiter.step;
+  if(step==="type")return `<button data-ai-reply="Permanent">Permanent</button><button data-ai-reply="Contract">Contract</button>`;
+  if(step==="mode")return APP_OPTIONS.workModes.map(value=>`<button data-ai-reply="${value}">${value}</button>`).join("");
+  if(step==="openings")return [1,2,3,5].map(value=>`<button data-ai-reply="${value}">${value}</button>`).join("");
+  if(step==="permission")return "";
+  if(step==="idle")return `<button data-ai-reply="Create a new job">Create a new job</button><button data-ai-reply="Give me a company activity summary">Activity summary</button><button data-ai-reply="Show an activity graph">Activity graph</button><button data-ai-reply="How many CVs need review?">CVs needing review</button>`;
+  return "";
+}
+function aiRecruiterPage(){
+  const chat=state.clientAiRecruiter;
+  return `<section class="ai-recruiter-page">
+    <div class="card ai-recruiter-shell">
+      <header class="ai-recruiter-head"><div class="ai-recruiter-orb">AI</div><div><h1>AI Recruiter</h1><p>Job creation and company hiring intelligence</p></div><button class="mini-btn" id="ai-new-conversation">New conversation</button></header>
+      <div class="ai-recruiter-messages" id="ai-recruiter-messages">${chat.messages.map(aiRecruiterMessageMarkup).join("")}</div>
+      <div class="ai-quick-replies">${aiRecruiterQuickReplies()}</div>
+      <form class="ai-recruiter-compose" id="ai-recruiter-form"><input id="ai-recruiter-input" autocomplete="off" placeholder="${chat.step==="idle"?"Ask about hiring activity or say you want to create a job...":"Type your answer..."}" ${chat.step==="permission"?"disabled":""} required><button class="btn btn-primary" ${chat.step==="permission"?"disabled":""}>Send</button></form>
+      <p class="ai-recruiter-note">Jobs are generated only after your permission. New jobs are sent to Admin for recruiter assignment and then appear in the Recruiter's My Assigned Jobs.</p>
+    </div>
+  </section>`;
+}
+function addAiRecruiterMessage(from,text,extra={}){
+  state.clientAiRecruiter.messages.push({from,text,time:"Just now",...extra});
+}
+function startAiRecruiterJd(){
+  state.clientAiRecruiter.draft={};
+  state.clientAiRecruiter.step="title";
+  addAiRecruiterMessage("ai","I will help create the job description. What is the job title?");
+}
+function answerClientActivity(question){
+  const activity=clientActivitySnapshot();
+  const query=question.toLowerCase();
+  if(/graph|chart|visual/.test(query)){
+    addAiRecruiterMessage("ai","Here is a quick view of the latest company hiring activity.",{kind:"chart"});
+    return true;
+  }
+  if(/summary|activity|overview|status|dashboard/.test(query)){
+    addAiRecruiterMessage("ai",clientActivitySummary());
+    return true;
+  }
+  if(/cv|candidate|profile/.test(query)){
+    addAiRecruiterMessage("ai",`${activity.candidates.length} candidate profiles are linked to your jobs. ${activity.cvReview} currently need client review, and ${activity.candidates.filter(candidate=>candidate.score>=90).length} have an AI match of 90% or higher.`);
+    return true;
+  }
+  if(/interview/.test(query)){
+    addAiRecruiterMessage("ai",`${activity.interviews.length} interviews are linked to your company: ${activity.confirmedInterviews} confirmed and ${activity.pendingInterviews} pending confirmation.`);
+    return true;
+  }
+  if(/offer|join|placement/.test(query)){
+    addAiRecruiterMessage("ai",`${activity.offers} candidates are at offer or joining stage, including ${activity.joined} completed join${activity.joined===1?"":"s"}.`);
+    return true;
+  }
+  if(/job|role|opening|requirement/.test(query)&&!/create|post|hire|new|generate|jd/.test(query)){
+    addAiRecruiterMessage("ai",`${activity.jobs.length} jobs are linked to ${roles.Client.company}; ${activity.activeJobs} are active and ${activity.pendingJobs} are awaiting recruiter assignment.`);
+    return true;
+  }
+  return false;
+}
+function advanceAiRecruiterJd(answer){
+  const chat=state.clientAiRecruiter;
+  const draft=chat.draft;
+  if(chat.step==="salary"){
+    draft.salary=answer.trim();
+    chat.step="permission";
+    addAiRecruiterMessage("ai","I have prepared the job summary. May I generate this job now?",{kind:"permission",draft:{...draft}});
+    return;
+  }
+  const questions={
+    title:["title","What type of engagement is this: Permanent or Contract?","type"],
+    type:["type","Which department owns this role?","department"],
+    department:["department","What is the work location or city?","location"],
+    location:["location","What is the work mode: Hybrid, Remote, or Onsite?","mode"],
+    mode:["mode","How many openings are required?","openings"],
+    openings:["openings","What experience range is required? For example, 5-8 years.","experience"],
+    experience:["experience","List the essential skills, separated by commas.","skills"],
+    skills:["skills","What are the key responsibilities for this position?","responsibilities"],
+    responsibilities:["responsibilities","What salary range or monthly rate should be shown?","salary"]
+  };
+  const current=questions[chat.step];
+  if(!current)return;
+  let value=answer.trim();
+  if(chat.step==="type")value=/contract/i.test(value)?"Contract":"Permanent";
+  if(chat.step==="mode")value=APP_OPTIONS.workModes.find(mode=>value.toLowerCase().includes(mode.toLowerCase()))||value;
+  if(chat.step==="openings")value=Math.max(1,Number(value.replace(/\D/g,""))||1);
+  draft[current[0]]=value;
+  chat.step=current[2];
+  addAiRecruiterMessage("ai",current[1]);
+}
+function handleAiRecruiterMessage(text){
+  const chat=state.clientAiRecruiter;
+  addAiRecruiterMessage("user",text);
+  if(chat.step==="idle"){
+    if(answerClientActivity(text))return;
+    if(/create|post|hire|new job|jd|recruit/.test(text.toLowerCase())){startAiRecruiterJd();return}
+    addAiRecruiterMessage("ai","I can help create a job description, share a company activity summary or graph, and answer questions about jobs, CVs, interviews, offers, and joining activity.");
+    return;
+  }
+  advanceAiRecruiterJd(text);
+}
+function generateAiRecruiterJob(){
+  const chat=state.clientAiRecruiter;
+  if(chat.step!=="permission")return;
+  const draft=chat.draft;
+  const client=state.clients.find(item=>item.company===roles.Client.company);
+  const job={
+    id:nextId("JOB",state.jobs),title:draft.title,projectName:"Generated by AI Recruiter",department:draft.department||"General",
+    type:draft.type||"Permanent",client:roles.Client.company,clientId:client?.id,location:draft.location||"Remote",
+    mode:draft.mode||"Hybrid",status:"Active",assignmentStatus:"Pending",urgency:"Medium",recruiter:"",
+    openings:Number(draft.openings)||1,cv:0,interviews:0,offers:0,skills:draft.skills||"",
+    responsibilities:draft.responsibilities||"",experience:draft.experience||"",salary:draft.salary||"To be discussed",
+    date:new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+  };
+  state.jobs.unshift(job);
+  addAssignmentNotification({roles:["Admin"],client:job.client,message:`${job.title} for ${job.client} was generated by AI Recruiter and is awaiting recruiter assignment`});
+  addAssignmentNotification({roles:["Client"],client:job.client,message:`${job.title} was created by AI Recruiter and is pending Admin recruiter assignment`});
+  chat.step="idle";
+  chat.draft={};
+  addAiRecruiterMessage("ai",`The job has been generated in My Job Listings. Admin has been notified to assign a recruiter. After assignment, it will appear in the Recruiter's My Assigned Jobs.`,{kind:"created",jobId:job.id,title:job.title});
+  save();
 }
 
 function dashboard(role) {
@@ -1073,6 +1237,27 @@ function bindPage() {
   bindAiSummaryTyping();
   bindTagInputs();
   bindProfileEditors();
+  $("#ai-recruiter-form")?.addEventListener("submit",event=>{
+    event.preventDefault();
+    const input=$("#ai-recruiter-input");
+    const text=input.value.trim();
+    if(!text)return;
+    handleAiRecruiterMessage(text);
+    save();render();
+  });
+  $$("[data-ai-reply]").forEach(button=>button.onclick=()=>{handleAiRecruiterMessage(button.dataset.aiReply);save();render()});
+  $("#ai-generate-job")?.addEventListener("click",()=>{generateAiRecruiterJob();render();toast("Job generated and Admin notified")});
+  $("#ai-edit-jd")?.addEventListener("click",()=>{
+    state.clientAiRecruiter.step="title";
+    addAiRecruiterMessage("ai",`No problem. The current title is ${state.clientAiRecruiter.draft.title||"not set"}. What should the job title be?`);
+    save();render();
+  });
+  $("#ai-new-conversation")?.addEventListener("click",()=>{
+    state.clientAiRecruiter={step:"idle",draft:{},messages:[{from:"ai",text:"How may I help you? I can create a job description with you or answer questions about Northstar Systems' hiring activity."}]};
+    save();render();
+  });
+  const aiRecruiterMessages=$("#ai-recruiter-messages");
+  if(aiRecruiterMessages)aiRecruiterMessages.scrollTop=aiRecruiterMessages.scrollHeight;
   $$("[data-bulk-upload]").forEach(button=>button.onclick=()=>showBulkUpload(button.dataset.bulkUpload));
   $$("[data-go]").forEach(x=>{
     const openPage=()=>{currentPage=x.dataset.go;filter=x.dataset.viewFilter || "All";render()};
@@ -1779,7 +1964,7 @@ function showAssignmentForm(id){
     save();closeModal();render();toast(`${job.title} assigned to ${data.recruiter}`);
   };
 }
-function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div><h3>Required skills</h3>${skillTags(j.skills)}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>${session.role==="Client"?"Review candidates":"Source candidates"}</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":session.role==="Client"?"cv-review":"candidates";render()}) }
+function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div>${j.experience?`<p><b>Experience:</b> ${esc(j.experience)}</p>`:""}<h3>Required skills</h3>${skillTags(j.skills)}${j.responsibilities?`<h3>Key responsibilities</h3><p>${esc(j.responsibilities)}</p>`:""}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>${session.role==="Client"?"Review candidates":"Source candidates"}</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":session.role==="Client"?"cv-review":"candidates";render()}) }
 function miniResumeMarkup(profile,{visible=true,external=false}={}){
   const experience=profile.experienceEntries||[];
   const education=profile.educationEntries||[];
