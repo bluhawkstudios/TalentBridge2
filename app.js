@@ -331,6 +331,10 @@ state.candidates=state.candidates.map((candidate,index)=>({
     reasonForLeaving:entry.reasonForLeaving||candidate.reasonForLeaving||LEAVING_REASONS[(index+entryIndex)%LEAVING_REASONS.length]
   }))
 }));
+state.profile.candidateId ||= state.candidates.find(candidate=>candidate.email===state.profile.email)?.id
+  || state.candidates.find(candidate=>candidate.name===state.profile.name)?.id
+  || state.candidates[0]?.id
+  || "";
 const talentBridgeProfiles=state.candidates.map((candidate,index)=>({
   id:`TBD-${candidate.id}`,candidateId:candidate.id,name:candidate.name,role:candidate.role,skills:candidate.skills,
   location:candidate.location,score:candidate.score,experience:Math.max(1,candidate.experienceEntries?.length?candidate.experienceEntries.length*3:2+(index%10)),
@@ -396,6 +400,21 @@ if (!state.teamChats) {
 }
 
 function syncLinkedData() {
+  state.candidates.forEach(candidate=>{
+    const job=state.jobs.find(item=>item.id===candidate.jobId);
+    if(!job)return;
+    candidate.role=job.title;
+    candidate.type=job.type;
+    candidate.client=job.client;
+    candidate.recruiter=job.recruiter;
+  });
+  state.interviews.forEach(interview=>{
+    const candidate=state.candidates.find(item=>item.id===interview.candidateId);
+    if(!candidate)return;
+    interview.candidate=candidate.name;
+    interview.role=candidate.role;
+    interview.jobId=candidate.jobId;
+  });
   state.jobs.forEach(job=>{
     const linked=state.candidates.filter(candidate=>candidate.jobId===job.id);
     job.cv=linked.length;
@@ -410,12 +429,13 @@ function syncLinkedData() {
   ];
 }
 const save = () => { syncLinkedData(); localStorage.setItem("talentos-state", JSON.stringify(state)); };
-const addAssignmentNotification = ({roles:targetRoles,message,recruiter="",client=""}) => {
+const addAssignmentNotification = ({roles:targetRoles,message,recruiter="",client="",candidateId=""}) => {
   state.assignmentNotifications.unshift({
     id:`NOT-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     roles:targetRoles,
     recruiter,
     client,
+    candidateId,
     message,
     time:"Just now",
     readBy:[]
@@ -429,6 +449,7 @@ const roleNotifications = () => {
     if(!item.roles.includes(role)) return false;
     if(role==="Recruiter" && item.recruiter && item.recruiter!==user) return false;
     if(role==="Client" && item.client && item.client!==company) return false;
+    if(role==="Candidate" && item.candidateId && item.candidateId!==state.profile.candidateId) return false;
     return true;
   });
   const system = role==="Admin"
@@ -522,11 +543,17 @@ const toast = msg => {
   clearTimeout(window.toastTimer); window.toastTimer = setTimeout(() => el.classList.remove("show"), 2300);
 };
 const titleFor = id => roles[session.role].nav.find(x => x[0] === id)?.[1] || id;
+const profileCandidateRecord = () => state.candidates.find(candidate=>candidate.id===state.profile.candidateId)
+  || state.candidates.find(candidate=>candidate.email===state.profile.email)
+  || state.candidates.find(candidate=>candidate.name===state.profile.name)
+  || state.candidates.find(candidate=>candidate.name===roles.Candidate.user);
+const activeUserName = role => role==="Candidate" ? (state.profile.name||roles.Candidate.user) : roles[role].user;
 const roleJobs = role => {
   if (role === "Recruiter") return state.jobs.filter(job => job.assignmentStatus === "Assigned" && job.recruiter === roles.Recruiter.user);
   if (role === "Client") return state.jobs.filter(job => job.client === roles.Client.company);
   if (role === "Candidate") {
-    const jobIds = new Set(state.candidates.filter(candidate => candidate.name === roles.Candidate.user).map(candidate => candidate.jobId));
+    const candidate=profileCandidateRecord();
+    const jobIds = new Set(candidate?[candidate.jobId]:[]);
     return state.jobs.filter(job => jobIds.has(job.id));
   }
   return state.jobs;
@@ -540,11 +567,17 @@ const roleCandidates = role => {
     const jobIds = new Set(roleJobs(role).map(job => job.id));
     return state.candidates.filter(candidate => jobIds.has(candidate.jobId));
   }
-  if (role === "Candidate") return state.candidates.filter(candidate => candidate.name === roles.Candidate.user);
+  if (role === "Candidate") {
+    const candidate=profileCandidateRecord();
+    return candidate?[candidate]:[];
+  }
   return state.candidates;
 };
 const roleInterviews = role => {
-  if (role === "Candidate") return state.interviews.filter(interview => interview.candidate === roles.Candidate.user);
+  if (role === "Candidate") {
+    const candidate=profileCandidateRecord();
+    return candidate?state.interviews.filter(interview=>interview.candidateId===candidate.id):[];
+  }
   const candidateIds = new Set(roleCandidates(role).map(candidate => candidate.id));
   return state.interviews.filter(interview => candidateIds.has(interview.candidateId));
 };
@@ -710,7 +743,7 @@ function renderTeamChat() {
 }
 
 function pageHead(title, sub, actions="") {
-  const filters = ["dashboard","ai-sourcing","integrations"].includes(currentPage) ? "" : standardFilterBar();
+  const filters = ["dashboard","ai-sourcing","integrations","job-type"].includes(currentPage) ? "" : standardFilterBar();
   return `<div class="page-head"><div><h1>${title}</h1><p>${sub}</p></div><div class="page-actions">${actions}</div></div>${filters}`;
 }
 function standardFilterBar() {
@@ -1050,6 +1083,7 @@ function dashboard(role) {
     ? allInterviews
     : allInterviews.filter(interview => roleCandidateRecords.find(candidate=>candidate.id===interview.candidateId)?.type===filter);
   const offers = candidates.filter(candidate => ["Offered","Joined"].includes(candidate.stage)).length;
+  const openOffers = candidates.filter(candidate => candidate.stage==="Offered").length;
   const activeJobs = jobs.filter(job => job.status === "Active").length;
   const adminStageMetrics = PIPELINE_STAGES.map(stage=>[
     stage,
@@ -1059,8 +1093,8 @@ function dashboard(role) {
     stage,
     stage
   ]);
-  const metrics = role==="Candidate" ? [["Active applications",jobs.length,"Current applications","applications"],["Upcoming interviews",interviews.length,interviews.length ? "Next interview scheduled" : "No interviews scheduled","interviews"],["Profile complete",`${state.profile.completion}%`,"Profile strength","profile"],["Offers",offers,"Awaiting response","offers"]] :
-    role==="Client" ? [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["CVs to review",candidates.length,"Profiles received","cv-review"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Offers open",offers,"At offer stage","offers"]] :
+  const metrics = role==="Candidate" ? [["Active applications",jobs.length,"Current applications","applications"],["Upcoming interviews",interviews.filter(interview=>!["Completed","Cancelled"].includes(interview.status)).length,interviews.some(interview=>!["Completed","Cancelled"].includes(interview.status)) ? "Next interview scheduled" : "No interviews scheduled","interviews"],["Profile complete",`${state.profile.completion}%`,"Profile strength","profile"],["Offers",openOffers,"Awaiting response","offers"]] :
+    role==="Client" ? [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["CVs to review",candidates.length,"Profiles received","cv-review"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Offers open",openOffers,"At offer stage","offers"]] :
     role==="Recruiter" ? [["Assigned jobs",jobs.length,`${activeJobs} active`,"jobs"],["Candidates sourced",candidates.length,"In assigned pipelines","sourcing"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Placements",candidates.filter(candidate => candidate.stage === "Joined").length,"Joined candidates","sourcing","Joined"]] :
     adminStageMetrics;
   const stageGroups = [
@@ -1146,6 +1180,7 @@ function candidatesPage(role, page) {
 
 function interviewsPage(role,page) {
   const ai = page==="ai-interview";
+  const canManageInterviews=role!=="Candidate";
   const interviews = roleInterviews(role);
   const visibleInterviews = interviewView === "Completed"
     ? interviews.filter(interview => /completed/i.test(interview.status))
@@ -1170,13 +1205,14 @@ function interviewsPage(role,page) {
       const events=calendarEvents[day]||[];
       const today=new Date();
       const isToday=today.getFullYear()===calendarYear&&today.getMonth()===calendarMonth&&today.getDate()===day;
-      return `<div class="${isToday?"calendar-today":""}"><b>${day}</b>${events.slice(0,2).map(event=>{const candidate=state.candidates.find(item=>item.id===event.candidateId);return `<button class="cal-event calendar-event" data-id="${event.id}" data-filter-status="${event.status}" data-filter-date="${event.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}">${esc(event.time)} · ${esc(event.candidate)}</button>`}).join("")}${events.length>2?`<small class="calendar-more">+${events.length-2} more</small>`:""}</div>`;
+      return `<div class="${isToday?"calendar-today":""}"><b>${day}</b>${events.slice(0,2).map(event=>{const candidate=state.candidates.find(item=>item.id===event.candidateId);const eventMarkup=`${esc(event.time)} · ${esc(event.candidate)}`;return canManageInterviews?`<button class="cal-event calendar-event" data-id="${event.id}" data-filter-status="${event.status}" data-filter-date="${event.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}">${eventMarkup}</button>`:`<div class="cal-event calendar-event" data-filter-status="${event.status}" data-filter-date="${event.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}">${eventMarkup}</div>`}).join("")}${events.length>2?`<small class="calendar-more">+${events.length-2} more</small>`:""}</div>`;
     }).join("")}</div>`;
-  return `${pageHead(ai?"AI Technical Interviews":"Interview Management",ai?"Assign, monitor, and review structured AI interviews.":"Schedule interviews, coordinate panels, and capture feedback.",`<button class="btn btn-secondary" data-bulk-upload="interviews">⇧ Bulk upload</button><button class="btn btn-primary" id="schedule-interview">＋ Schedule interview</button>`)}
+  const actions=canManageInterviews?`<button class="btn btn-secondary" data-bulk-upload="interviews">⇧ Bulk upload</button><button class="btn btn-primary" id="schedule-interview">＋ Schedule interview</button>`:"";
+  return `${pageHead(ai?"AI Technical Interviews":"Interview Management",ai?"Assign, monitor, and review structured AI interviews.":canManageInterviews?"Schedule interviews, coordinate panels, and capture feedback.":"Review your upcoming and completed interview schedule.",actions)}
   ${ai?kpis([["Assigned",interviews.filter(interview=>interview.round==="AI Technical").length,"AI interview records"],["Completed",interviews.filter(interview=>interview.round==="AI Technical"&&interview.status==="Completed").length,"Finished assessments"],["Avg. score",`${Math.round(roleCandidates(role).reduce((sum,candidate)=>sum+candidate.score,0)/Math.max(roleCandidates(role).length,1))}%`,"Linked candidate score"],["Shortlisted",roleCandidates(role).filter(candidate=>candidate.score>=85).length,"Score 85% or higher"]]):""}
   <div class="card panel"><div class="filter-row"><div class="tabs">${["Upcoming","Completed","Calendar"].map(view=>`<button class="tab ${interviewView===view?"active":""}" data-interview-view="${view}">${view}</button>`).join("")}</div></div>
-  ${interviewView==="Calendar" ? calendar : `<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Round</th><th>Date & time</th><th>Mode</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-  ${visibleInterviews.map(i=>{const candidate=state.candidates.find(item=>item.id===i.candidateId);return `<tr data-filter-status="${i.status}" data-filter-date="${i.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}"><td>${person(i.candidate)}</td><td>${i.role}</td><td>${badge(i.round)}</td><td><b>${i.date}</b><br><small>${i.time}</small></td><td>${i.mode}</td><td>${badge(i.status)}</td><td><button class="mini-btn feedback-interview" data-id="${i.id}">${ai?"Report":"Feedback"}</button> <button class="mini-btn reschedule-interview" data-id="${i.id}">Reschedule</button></td></tr>`}).join("") || `<tr><td colspan="7" class="empty">No ${interviewView.toLowerCase()} interviews found.</td></tr>`}
+  ${interviewView==="Calendar" ? calendar : `<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Round</th><th>Date & time</th><th>Mode</th><th>Status</th>${canManageInterviews?"<th>Actions</th>":""}</tr></thead><tbody>
+  ${visibleInterviews.map(i=>{const candidate=state.candidates.find(item=>item.id===i.candidateId);return `<tr data-filter-status="${i.status}" data-filter-date="${i.date}" data-filter-type="${candidate?.type||""}" data-filter-owner="${candidate?.recruiter||""}"><td>${person(i.candidate)}</td><td>${i.role}</td><td>${badge(i.round)}</td><td><b>${i.date}</b><br><small>${i.time}</small></td><td>${i.mode}</td><td>${badge(i.status)}</td>${canManageInterviews?`<td><button class="mini-btn feedback-interview" data-id="${i.id}">${ai?"Report":"Feedback"}</button> <button class="mini-btn reschedule-interview" data-id="${i.id}">Reschedule</button></td>`:""}</tr>`}).join("") || `<tr><td colspan="${canManageInterviews?7:6}" class="empty">No ${interviewView.toLowerCase()} interviews found.</td></tr>`}
   </tbody></table></div>`}</div>`;
 }
 
@@ -1187,9 +1223,9 @@ function ensureCandidateRecruiterThread(candidate) {
   state.candidateRecruiterChats ||= {};
   if (!candidate) return [];
   if (!state.candidateRecruiterChats[candidate.id]) {
-    state.candidateRecruiterChats[candidate.id] = candidate.name===roles.Candidate.user
+    state.candidateRecruiterChats[candidate.id] = candidate.id===state.profile.candidateId
       ? (state.messages||seed.messages).map(message=>({
-          sender:message.sender||message.from||(message.me?roles.Candidate.user:assignedRecruiterForCandidate(candidate)),
+          sender:message.sender||message.from||(message.me?activeUserName("Candidate"):assignedRecruiterForCandidate(candidate)),
           text:message.text,
           time:message.time
         }))
@@ -1225,8 +1261,8 @@ function communicationPage() {
     ${isCandidate?`<div class="private-chat-label"><span>●</span> Private recruiter conversation</div>`:`<div class="chat-search"><input id="conversation-search" placeholder="Search candidates..." /></div>`}
     ${conversations.map(conversation=>`<button type="button" class="conversation ${conversation.id===selectedCandidate.id?"active":""}" data-conversation="${conversation.id}"><span class="avatar">${initials(conversation.name)}</span><div style="min-width:0"><b>${esc(conversation.name)}</b><p>${esc(conversation.context)}</p></div><small>${esc(conversation.time)}</small></button>`).join("")}</aside>
   <section class="chat-main"><div class="chat-head"><span class="avatar">${initials(contactName)}</span><div><b>${esc(contactName)}</b><br><small style="color:var(--green)">● Online · ${esc(contactContext)}</small></div><span class="private-chat-badge">Private</span></div>
-  <div class="messages">${messages.length?messages.map(message=>`<div class="bubble ${message.sender===roles[session.role].user?"me":""}">${esc(message.text)}<small>${esc(message.time)}</small></div>`).join(""):`<div class="chat-empty-state"><b>Start the conversation</b><span>Messages here are visible only to ${esc(selectedCandidate.name)} and ${esc(recruiter)}.</span></div>`}</div>
-  <form class="message-compose" id="message-form"><button type="button" class="icon-btn" aria-label="Add attachment">＋</button><input id="message-input" placeholder="Message ${esc(contactName.split(" ")[0])}..." required /><button class="btn btn-primary">Send</button></form></section></div>`;
+  <div class="messages">${messages.length?messages.map(message=>`<div class="bubble ${message.sender===activeUserName(session.role)?"me":""}">${esc(message.text)}<small>${esc(message.time)}</small></div>`).join(""):`<div class="chat-empty-state"><b>Start the conversation</b><span>Messages here are visible only to ${esc(selectedCandidate.name)} and ${esc(recruiter)}.</span></div>`}</div>
+  <form class="message-compose" id="message-form"><input id="message-attachment" type="file" hidden><button type="button" class="icon-btn" id="message-attachment-btn" aria-label="Add attachment">＋</button><input id="message-input" placeholder="Message ${esc(contactName.split(" ")[0])}..." required /><button class="btn btn-primary">Send</button></form></section></div>`;
 }
 
 function offersPage(role) {
@@ -1235,10 +1271,10 @@ function offersPage(role) {
   const offerJob=candidateOffer ? state.jobs.find(job=>job.id===candidateOffer.jobId) : null;
   return `${pageHead(role==="Candidate"?"Offer & Joining":"Offer & Contract Management",role==="Candidate"?"Review your offer and complete joining actions.":"Create, track, and close offers for both engagement types.",role!=="Candidate"?`<button class="btn btn-secondary" data-bulk-upload="offers">⇧ Bulk upload</button><button class="btn btn-primary" id="raise-offer">＋ Raise offer</button>`:"")}
   <div class="card panel">
-  ${role==="Candidate"?(candidateOffer?`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px"><div><span>${badge(candidateOffer.type==="Permanent"?"Permanent offer":"Contract offer")}</span><h2>${candidateOffer.role}</h2><p>${candidateOffer.client} · ${offerJob?.location||candidateOffer.location} · ${offerJob?.mode||""}</p></div><div style="text-align:right"><small>Compensation</small><h2>${candidateOffer.ctc}</h2></div></div>
-    <div class="timeline">${["Offered","Viewed","Documents","Accepted","Joining"].map((x,i)=>`<div class="stage ${i<2?"done":i===2?"current":""}"><span class="stage-dot">${i<2?"✓":i+1}</span>${x}</div>`).join("")}</div>
+  ${role==="Candidate"?(candidateOffer?`<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:20px"><div><span>${badge(candidateOffer.type==="Permanent"?"Permanent offer":candidateOffer.type==="AI Agent"?"AI Agent engagement":"Contract offer")} ${badge(candidateOffer.stage==="Joined"?"Accepted":"Awaiting response")}</span><h2>${candidateOffer.role}</h2><p>${candidateOffer.client} · ${offerJob?.location||candidateOffer.location} · ${offerJob?.mode||""}</p></div><div style="text-align:right"><small>Compensation</small><h2>${candidateOffer.ctc}</h2></div></div>
+    <div class="timeline">${["Offered","Viewed","Documents","Accepted","Joining"].map((x,i)=>{const completed=candidateOffer.stage==="Joined"||i<2;const current=candidateOffer.stage!=="Joined"&&i===2;return `<div class="stage ${completed?"done":current?"current":""}"><span class="stage-dot">${completed?"✓":i+1}</span>${x}</div>`}).join("")}</div>
     <div class="grid-equal"><div><h3>Offer details</h3><p><b>Compensation:</b> ${candidateOffer.ctc}</p><p><b>Start date:</b> ${candidateOffer.offer?.startDate||"To be confirmed"}</p><p><b>Terms:</b> ${candidateOffer.offer?.terms||"Standard company terms"}</p></div><div><h3>Required documents</h3><p>✓ Identity proof</p><p>✓ Current employment letter</p><p>○ Signed offer letter</p><p>○ Bank details</p></div></div>
-    <div style="display:flex;gap:10px;margin-top:20px"><button class="btn btn-primary" id="accept-offer" data-id="${candidateOffer.id}">Accept offer</button><button class="btn btn-secondary" id="download-offer">⇩ Download</button><button class="btn btn-danger" id="decline-offer">Decline</button></div>`:`<div class="empty"><div class="empty-icon">◇</div><h3>No active offer</h3><p>Your offer or contract will appear here when it is issued.</p></div>`):
+    <div style="display:flex;gap:10px;margin-top:20px">${candidateOffer.stage==="Offered"?`<button class="btn btn-primary" id="accept-offer" data-id="${candidateOffer.id}">Accept offer</button>`:""}<button class="btn btn-secondary" id="download-offer">⇩ Download</button>${candidateOffer.stage==="Offered"?`<button class="btn btn-danger" id="decline-offer">Decline</button>`:`<span class="badge badge-green"><i class="dot"></i>Joining workflow active</span>`}</div>`:`<div class="empty"><div class="empty-icon">◇</div><h3>No active offer</h3><p>Your offer or contract will appear here when it is issued.</p></div>`):
     `<div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Position</th><th>Type</th><th>Compensation</th><th>Start date</th><th>Status</th><th>Action</th></tr></thead><tbody>
     ${offerCandidates.map(c=>`<tr data-filter-type="${c.type}" data-filter-status="${c.stage}" data-filter-owner="${c.recruiter}" data-filter-date="${c.offer?.startDate||""}"><td>${person(c.name)}</td><td>${c.role}</td><td>${badge(c.type)}</td><td>${c.ctc}</td><td>${c.offer?.startDate||"To be confirmed"}</td><td>${badge(c.stage)}</td><td><button class="mini-btn view-offer" data-id="${c.id}">View</button> <button class="mini-btn manage-offer" data-id="${c.id}">${c.stage==="Joined"?"Onboard":"Edit"}</button></td></tr>`).join("") || `<tr><td colspan="7" class="empty">No candidates are currently at offer stage.</td></tr>`}</tbody></table></div>`}
   </div>`;
@@ -1511,8 +1547,16 @@ function bindPage() {
     const inp=$("#message-input");
     const candidate=state.candidates.find(item=>item.id===activeConversation);
     if(!candidate||!inp.value.trim())return;
-    ensureCandidateRecruiterThread(candidate).push({sender:roles[session.role].user,text:inp.value.trim(),time:"Just now"});
+    ensureCandidateRecruiterThread(candidate).push({sender:activeUserName(session.role),text:inp.value.trim(),time:"Just now"});
     save();render();toast("Private message sent");
+  });
+  $("#message-attachment-btn")?.addEventListener("click",()=>$("#message-attachment")?.click());
+  $("#message-attachment")?.addEventListener("change",event=>{
+    const file=event.target.files?.[0];
+    const candidate=state.candidates.find(item=>item.id===activeConversation);
+    if(!file||!candidate)return;
+    ensureCandidateRecruiterThread(candidate).push({sender:activeUserName(session.role),text:`Attachment shared: ${file.name}`,time:"Just now",attachment:file.name});
+    save();render();toast("Attachment added to the private conversation");
   });
   $$(".conversation").forEach(button=>button.onclick=()=>{activeConversation=button.dataset.conversation;render()});
   $("#conversation-search")?.addEventListener("input",event=>{
@@ -1522,8 +1566,8 @@ function bindPage() {
   $("#raise-offer")?.addEventListener("click",showOfferForm);
   $$(".view-offer").forEach(button=>button.onclick=()=>showOfferDetails(button.dataset.id));
   $$(".manage-offer").forEach(button=>button.onclick=()=>showOfferManagement(button.dataset.id));
-  $("#accept-offer")?.addEventListener("click",event=>{const candidate=state.candidates.find(item=>item.id===event.currentTarget.dataset.id);candidate.stage="Joined";if(candidate.offer)candidate.offer.status="Accepted";save();render();toast("Offer accepted and all workspaces updated")});
-  $("#decline-offer")?.addEventListener("click",()=>confirmAction("Decline this offer?","The recruiter will be notified.",()=>{const candidate=roleCandidates("Candidate").find(item=>item.stage==="Offered");if(candidate){candidate.stage="Client Review";if(candidate.offer)candidate.offer.status="Declined";save();render()}toast("Offer declined")}));
+  $("#accept-offer")?.addEventListener("click",event=>{const candidate=state.candidates.find(item=>item.id===event.currentTarget.dataset.id);if(!candidate)return;candidate.stage="Joined";if(candidate.offer)candidate.offer.status="Accepted";addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.name} accepted the offer for ${candidate.role}`});save();render();toast("Offer accepted and all workspaces updated")});
+  $("#decline-offer")?.addEventListener("click",()=>confirmAction("Decline this offer?","The recruiter will be notified.",()=>{const candidate=roleCandidates("Candidate").find(item=>item.stage==="Offered");if(candidate){candidate.stage="Client Review";if(candidate.offer)candidate.offer.status="Declined";addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.name} declined the offer for ${candidate.role}`});save();render()}toast("Offer declined")}));
   $("#download-offer")?.addEventListener("click",()=>{const candidate=roleCandidates("Candidate").find(item=>["Offered","Joined"].includes(item.stage));if(candidate)downloadCsv("offer-details.csv",[["Role","Company","Compensation"],[candidate.role,candidate.client,candidate.ctc]])});
   $("#new-user")?.addEventListener("click",showUserForm);
   $$(".edit-user").forEach(x=>x.onclick=()=>showUserForm(state.users[+x.dataset.i],+x.dataset.i));
@@ -1568,11 +1612,14 @@ function bindPage() {
     updated.experienceGapReason=gap.hasGap?String(updated.experienceGapReason||"").trim():"";
     updated.location=[updated.locality,updated.city,updated.state].filter(Boolean).join(", ");
     updated.completion=profileCompletionPercent(updated);
+    const candidate=profileCandidateRecord();
+    const previousCandidateName=candidate?.name||state.profile.name;
+    const previousCandidateEmail=candidate?.email||state.profile.email;
     Object.assign(state.profile,updated);
-    const candidate=state.candidates.find(item=>item.name===roles.Candidate.user);
+    if(candidate)state.profile.candidateId=candidate.id;
     const currentTotal=updated.currentFixed+updated.currentVariable;
     if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,lastWorkingDay:updated.lastWorkingDay,lastWorkingDate:updated.lastWorkingDay||lastWorkingDateFromNotice(updated.notice),reasonForLeaving:updated.experienceEntries[0]?.reasonForLeaving||candidate.reasonForLeaving,skills:updated.skills,experienceEntries:updated.experienceEntries,educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
-    const user=state.users.find(item=>item.email===roles.Candidate.email||item.name===roles.Candidate.user);
+    const user=state.users.find(item=>item.email===previousCandidateEmail||item.name===previousCandidateName||item.email===roles.Candidate.email);
     if(user)Object.assign(user,{name:updated.name,email:updated.email});
     save();render();toast("Profile updated across all linked workspaces");
   });
@@ -2334,8 +2381,10 @@ function importBulkRows(kind,rows){
       const clientName=session.role==="Client"?roles.Client.company:data.client;
       const client=state.clients.find(item=>item.company===clientName);
       if(!data.title||!client){skipped++;return}
-      const type=data.type==="Contract"?"Contract":"Permanent";
-      const job={id:nextId("JOB",state.jobs),title:data.title,department:data.department||"Engineering",type,client:clientName,clientId:client.id,location:data.location||"Remote",mode:APP_OPTIONS.workModes.includes(data.mode)?data.mode:"Hybrid",status:"Active",assignmentStatus:"Pending",urgency:"Medium",recruiter:"",openings:Number(data.openings)||1,cv:0,interviews:0,offers:0,skills:data.skills||"",salary:data.salary||(type==="Contract"?APP_OPTIONS.contractSalary[0]:APP_OPTIONS.permanentSalary[0]),date:"13 Jun 2026"};
+      const type=["Permanent","Contract","AI Agent"].includes(data.type)?data.type:"Permanent";
+      const defaultSalary=type==="Contract"?APP_OPTIONS.contractSalary[0]:type==="AI Agent"?"Starter · ₹25,000 / month":APP_OPTIONS.permanentSalary[0];
+      const allowedModes=type==="AI Agent"?["Cloud hosted","Private cloud","Hybrid deployment"]:APP_OPTIONS.workModes;
+      const job={id:nextId("JOB",state.jobs),title:data.title,department:data.department||"Engineering",type,client:clientName,clientId:client.id,location:data.location||"Remote",mode:allowedModes.includes(data.mode)?data.mode:allowedModes[0],status:"Active",assignmentStatus:"Pending",urgency:"Medium",recruiter:"",openings:Number(data.openings)||1,cv:0,interviews:0,offers:0,skills:data.skills||"",salary:data.salary||defaultSalary,date:"13 Jun 2026"};
       state.jobs.unshift(job);
       addAssignmentNotification({roles:["Admin"],client:clientName,message:`${job.title} for ${clientName} was bulk uploaded and awaits recruiter assignment`});
       addAssignmentNotification({roles:["Client"],client:clientName,message:`${job.title} was bulk uploaded and is pending Admin recruiter assignment`});
@@ -2423,10 +2472,10 @@ function showBulkUpload(kind){
     toast(`${result.imported} ${config.label} imported${result.skipped?` · ${result.skipped} skipped`:""} across linked workspaces`);
   };
 }
-function moveCandidate(id){const c=state.candidates.find(c=>c.id===id);modal("Update pipeline stage",`<div class="field"><label>New stage</label><select id="new-stage">${PIPELINE_STAGES.map(s=>`<option class="${stageClass(s)}" ${s===c.stage?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Notes</label><textarea placeholder="Add a note for the team..."></textarea></div>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Update stage</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{c.stage=$("#new-stage").value;save();closeModal();render();toast(`${c.name} moved to ${c.stage}`)}}
+function moveCandidate(id){const c=state.candidates.find(c=>c.id===id);if(!c)return;modal("Update pipeline stage",`<div class="field"><label>New stage</label><select id="new-stage">${PIPELINE_STAGES.map(s=>`<option class="${stageClass(s)}" ${s===c.stage?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Notes</label><textarea placeholder="Add a note for the team..."></textarea></div>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Update stage</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const previousStage=c.stage;c.stage=$("#new-stage").value;addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:c.recruiter,client:c.client,message:`${c.name} moved from ${previousStage} to ${c.stage}`});addAssignmentNotification({roles:["Candidate"],candidateId:c.id,recruiter:c.recruiter,client:c.client,message:`Your application for ${c.role} moved to ${c.stage}`});save();closeModal();render();toast(`${c.name} moved to ${c.stage}`)}}
 function showUpload(){modal("Upload CV",`<div class="dropzone" style="padding:50px 20px">⇧<h3>Drop CV files here</h3><p>PDF or DOCX · Up to 10 files</p><button class="btn btn-secondary" id="fake-upload">Browse files</button></div><p style="color:var(--muted);font-size:12px">TALENTBRIDGE will parse contact details, skills, employment history, and flag possible duplicates.</p>`);$("#fake-upload").onclick=()=>{closeModal();toast("CV parsed. Candidate draft created")}}
-function showInterviewForm(){modal("Schedule interview",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Round",name:"round",type:"select",options:INTERVIEW_ROUNDS},{label:"Date",name:"date",type:"date"},{label:"Time",name:"time",type:"time"},{label:"Mode",name:"mode",type:"select",options:["Video","In person","AI Room","Phone"]},{label:"Interviewer",name:"interviewer"}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Schedule & notify</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const c=state.candidates.find(candidate=>d.candidateId.startsWith(candidate.id));const date=new Date(`${d.date}T00:00:00`);const formatted=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});state.interviews.unshift({...d,candidateId:c.id,candidate:c.name,jobId:c.jobId,id:nextId("INT",state.interviews),role:c.role,date:formatted,status:"Pending"});save();closeModal();render();toast("Interview scheduled and visible to all linked users")}}
-function reschedule(id){const interview=state.interviews.find(item=>item.id===id);modal(`Reschedule ${interview.candidate}`,`<form id="modal-form">${fields([{label:"New date",name:"date",type:"date"},{label:"New time",name:"time",type:"time"},{label:"Reason",name:"reason",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Send update</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const form=$("#modal-form");if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form));const date=new Date(`${data.date}T00:00:00`);interview.date=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});interview.time=data.time;interview.status="Pending";interview.rescheduleReason=data.reason;save();closeModal();render();toast("Interview rescheduled across all workspaces")}}
+function showInterviewForm(){if(session.role==="Candidate")return;modal("Schedule interview",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Round",name:"round",type:"select",options:INTERVIEW_ROUNDS},{label:"Date",name:"date",type:"date"},{label:"Time",name:"time",type:"time"},{label:"Mode",name:"mode",type:"select",options:["Video","In person","AI Room","Phone"]},{label:"Interviewer",name:"interviewer"}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Schedule & notify</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const c=state.candidates.find(candidate=>d.candidateId.startsWith(candidate.id));if(!c)return;const date=new Date(`${d.date}T00:00:00`);const formatted=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});state.interviews.unshift({...d,candidateId:c.id,candidate:c.name,jobId:c.jobId,id:nextId("INT",state.interviews),role:c.role,date:formatted,status:"Pending"});addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:c.recruiter,client:c.client,message:`${d.round} interview scheduled for ${c.name} on ${formatted} at ${d.time}`});addAssignmentNotification({roles:["Candidate"],candidateId:c.id,recruiter:c.recruiter,client:c.client,message:`Your ${d.round} interview is scheduled for ${formatted} at ${d.time}`});save();closeModal();render();toast("Interview scheduled and visible to all linked users")}}
+function reschedule(id){if(session.role==="Candidate")return;const interview=state.interviews.find(item=>item.id===id);if(!interview)return;modal(`Reschedule ${interview.candidate}`,`<form id="modal-form">${fields([{label:"New date",name:"date",type:"date"},{label:"New time",name:"time",type:"time"},{label:"Reason",name:"reason",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Send update</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const form=$("#modal-form");if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form));const date=new Date(`${data.date}T00:00:00`);interview.date=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});interview.time=data.time;interview.status="Pending";interview.rescheduleReason=data.reason;const candidate=state.candidates.find(item=>item.id===interview.candidateId);if(candidate){addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:candidate.recruiter,client:candidate.client,message:`${interview.round} interview for ${candidate.name} was rescheduled to ${interview.date} at ${interview.time}`});addAssignmentNotification({roles:["Candidate"],candidateId:candidate.id,recruiter:candidate.recruiter,client:candidate.client,message:`Your ${interview.round} interview was rescheduled to ${interview.date} at ${interview.time}`})}save();closeModal();render();toast("Interview rescheduled across all workspaces")}}
 function nextInterviewStage(candidate,interview){
   const roundTargets={
     "Recruiter Screen":"AI Interview",
@@ -2443,6 +2492,7 @@ function nextInterviewStage(candidate,interview){
   return PIPELINE_STAGES[Math.min(Math.max(0,currentIndex)+1,PIPELINE_STAGES.indexOf("Offered"))];
 }
 function feedback(id){
+  if(session.role==="Candidate")return;
   const interview=state.interviews.find(item=>item.id===id);
   const candidate=state.candidates.find(item=>item.id===interview.candidateId);
   const nextStage=candidate?nextInterviewStage(candidate,interview):"next pipeline stage";
@@ -2468,13 +2518,13 @@ function feedback(id){
       addAssignmentNotification({roles:["Admin"],recruiter:candidate.recruiter,client:candidate.client,message:`Interview result: ${data.result}. ${stageMessage}`});
       addAssignmentNotification({roles:["Recruiter"],recruiter:candidate.recruiter,client:candidate.client,message:`Interview result: ${data.result}. ${stageMessage}`});
       addAssignmentNotification({roles:["Client"],recruiter:candidate.recruiter,client:candidate.client,message:`Interview result: ${data.result}. ${stageMessage}`});
-      addAssignmentNotification({roles:["Candidate"],recruiter:candidate.recruiter,client:candidate.client,message:`Your ${interview.round} interview status has been updated to ${candidate.stage}`});
+      addAssignmentNotification({roles:["Candidate"],candidateId:candidate.id,recruiter:candidate.recruiter,client:candidate.client,message:`Your ${interview.round} interview status has been updated to ${candidate.stage}`});
     }
     save();closeModal();render();
     toast(data.result==="Next round"?`${stageMessage} across all linked users`:"Interview feedback and candidate stage updated");
   };
 }
-function showOfferForm(){modal("Raise offer / contract",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Document type",name:"documentType",type:"select",options:["Permanent offer","Contract agreement"]},{label:"Fixed CTC / monthly rate",name:"ctc",type:"select",options:[...APP_OPTIONS.permanentSalary,...APP_OPTIONS.contractSalary]},{label:"Variable / tax terms",name:"terms"},{label:"Start date",name:"startDate",type:"date"},{label:"Offer expiry",name:"expiry",type:"date"},{label:"Special terms",name:"notes",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Save draft</button><button class="btn btn-primary" id="submit-modal">Issue document</button>`);$(".modal-close-2").onclick=()=>{closeModal();toast("Offer saved as draft")};$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const candidate=state.candidates.find(item=>d.candidateId.startsWith(item.id));candidate.stage="Offered";candidate.ctc=d.ctc;candidate.offer={documentType:d.documentType,terms:d.terms,startDate:d.startDate,expiry:d.expiry,notes:d.notes,status:"Awaiting response"};save();closeModal();render();toast("Offer issued and updated across all workspaces")}}
+function showOfferForm(){modal("Raise offer / contract",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Document type",name:"documentType",type:"select",options:["Permanent offer","Contract agreement"]},{label:"Fixed CTC / monthly rate",name:"ctc",type:"select",options:[...APP_OPTIONS.permanentSalary,...APP_OPTIONS.contractSalary]},{label:"Variable / tax terms",name:"terms"},{label:"Start date",name:"startDate",type:"date"},{label:"Offer expiry",name:"expiry",type:"date"},{label:"Special terms",name:"notes",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Save draft</button><button class="btn btn-primary" id="submit-modal">Issue document</button>`);$(".modal-close-2").onclick=()=>{closeModal();toast("Offer saved as draft")};$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const candidate=state.candidates.find(item=>d.candidateId.startsWith(item.id));if(!candidate)return;candidate.stage="Offered";candidate.ctc=d.ctc;candidate.offer={documentType:d.documentType,terms:d.terms,startDate:d.startDate,expiry:d.expiry,notes:d.notes,status:"Awaiting response"};addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:candidate.recruiter,client:candidate.client,message:`Offer issued to ${candidate.name} for ${candidate.role}`});addAssignmentNotification({roles:["Candidate"],candidateId:candidate.id,recruiter:candidate.recruiter,client:candidate.client,message:`A new offer for ${candidate.role} is ready for your review`});save();closeModal();render();toast("Offer issued and updated across all workspaces")}}
 function showOfferDetails(id){
   const candidate=state.candidates.find(item=>item.id===id);
   if(!candidate)return;
