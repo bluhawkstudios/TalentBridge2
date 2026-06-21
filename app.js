@@ -739,7 +739,7 @@ function standardFilterBar() {
   return `<div class="card standard-filters">
     <div class="standard-filter-search"><span>⌕</span><input id="page-filter-search" value="${esc(current.search||"")}" placeholder="Search this page..." autocomplete="off"></div>
     ${typePages.includes(currentPage)?`<select id="page-filter-type" aria-label="Filter by engagement type">
-      ${["All types","Permanent","Contract"].map(value=>`<option ${current.type===value?"selected":""}>${value}</option>`).join("")}
+      ${["All types","Permanent","Contract","AI Agent"].map(value=>`<option ${current.type===value?"selected":""}>${value}</option>`).join("")}
     </select>`:""}
     ${statusOptions[currentPage]?`<select id="page-filter-status" aria-label="Filter by status">
       ${["All statuses",...statusOptions[currentPage]].map(value=>`<option class="${stageClass(value)}" ${current.status===value?"selected":""}>${value}</option>`).join("")}
@@ -833,7 +833,7 @@ function aiSummaryCard(summary){
   return `<section class="ai-summary-shell"><div class="card ai-summary-card"><div class="ai-summary-head"><span>✦</span><div><h2>AI Summary</h2><small>Latest status, attention areas, and suggested next step</small></div><i class="ai-summary-live">Live</i></div><p class="ai-summary-text" data-summary-text="${esc(summary)}"><span class="typing-cursor"></span></p></div></section>`;
 }
 function tabs() {
-  return `<div class="tabs">${["All","Permanent","Contract"].map(x=>`<button class="tab ${filter===x?"active":""}" data-filter="${x}">${x}</button>`).join("")}</div>`;
+  return `<div class="tabs">${["All","Permanent","Contract","AI Agent"].map(x=>`<button class="tab ${filter===x?"active":""}" data-filter="${x}">${x}</button>`).join("")}</div>`;
 }
 function person(name, sub="") {
   if(!name)return `<span class="muted">Awaiting Admin</span>`;
@@ -1110,10 +1110,14 @@ function jobsPage(role) {
 }
 
 function jobTypePage() {
+  const permanentIcon=kpiIcon("job").svg;
+  const contractIcon=kpiIcon("applications").svg;
+  const aiAgentIcon=kpiIcon("integration").svg;
   return `${pageHead("Post a new job","Choose the engagement model. You can review all details before publishing.",`<button class="btn btn-secondary" data-bulk-upload="jobs">⇧ Bulk upload</button>`)}
-  <div class="grid-equal">
-    <div class="card panel" style="padding:30px"><span class="kpi-icon" style="position:static">♙</span><h2>Permanent Hire</h2><p style="color:var(--muted)">Hire a full-time employee on your payroll with salary, benefits and probation details.</p><button class="btn btn-primary choose-job" data-type="Permanent">Create permanent role →</button></div>
-    <div class="card panel" style="padding:30px"><span class="kpi-icon" style="position:static;background:#e8f1ff">⌁</span><h2>Hire on Contract</h2><p style="color:var(--muted)">Engage a professional for a defined period with rate, billing and exit terms.</p><button class="btn btn-primary choose-job" data-type="Contract">Create contract role →</button></div>
+  <div class="job-type-grid">
+    <div class="card panel job-type-card"><span class="kpi-icon kpi-icon-briefcase">${permanentIcon}</span><h2>Permanent Hire</h2><p>Hire a full-time employee on your payroll with salary, benefits and probation details.</p><button class="btn btn-primary choose-job" data-type="Permanent">Create permanent role →</button></div>
+    <div class="card panel job-type-card"><span class="kpi-icon kpi-icon-people">${contractIcon}</span><h2>Hire on Contract</h2><p>Engage a professional for a defined period with rate, billing and exit terms.</p><button class="btn btn-primary choose-job" data-type="Contract">Create contract role →</button></div>
+    <div class="card panel job-type-card job-type-ai"><span class="kpi-icon kpi-icon-network">${aiAgentIcon}</span><span class="ai-agent-pill">AI workforce</span><h2>Hire AI Agent</h2><p>Deploy a configurable AI agent for repeatable recruitment, HR, operations, or support workflows.</p><button class="btn btn-primary choose-job" data-type="AI Agent">Create AI agent →</button></div>
   </div>`;
 }
 
@@ -2146,21 +2150,34 @@ function fields(arr) {
 }
 function showJobForm(type){
   const isC=type==="Contract";
+  const isAI=type==="AI Agent";
   const ownershipFields=session.role==="Client"
     ? []
     : [{label:"Client",name:"client",type:"select",options:state.clients.map(client=>client.company)}];
-  const contextFields=isC
+  const contextFields=isAI
+    ? [{label:"Business function",name:"department",type:"select",options:APP_OPTIONS.departments},{label:"Agent use case",name:"projectName",placeholder:"Example: CV screening and interview coordination"}]
+    : isC
     ? [{label:"Project name",name:"projectName"},{label:"Department",name:"department",type:"select",options:APP_OPTIONS.departments}]
     : [{label:"Department",name:"department",type:"select",options:APP_OPTIONS.departments}];
-  modal(`Create ${type} job`,`<form id="modal-form">${fields([
-    {label:"Job title",name:"title"},
+  const modeField=isAI
+    ? {label:"Deployment mode",name:"mode",type:"select",options:["Cloud hosted","Private cloud","Hybrid deployment"]}
+    : {label:"Work mode",name:"mode",type:"select",options:APP_OPTIONS.workModes};
+  const commercialField=isAI
+    ? {label:"Monthly AI agent plan",name:"salary",type:"select",options:["Starter · ₹25,000 / month","Growth · ₹60,000 / month","Enterprise · Custom pricing"]}
+    : isC
+      ? {label:"Monthly billing rate",name:"salary",type:"select",options:APP_OPTIONS.contractSalary}
+      : {label:"Salary range",name:"salary",type:"select",options:APP_OPTIONS.permanentSalary};
+  modal(isAI?"Create AI Agent request":`Create ${type} job`,`<form id="modal-form">${fields([
+    {label:isAI?"AI agent name / role":"Job title",name:"title",placeholder:isAI?"Example: AI Recruitment Coordinator":""},
     ...ownershipFields,...contextFields,
-    {label:"Location",name:"location",type:"city"},{label:"Work mode",name:"mode",type:"select",options:APP_OPTIONS.workModes},
-    isC?{label:"Monthly billing rate",name:"salary",type:"select",options:APP_OPTIONS.contractSalary}:{label:"Salary range",name:"salary",type:"select",options:APP_OPTIONS.permanentSalary},
-    {label:isC?"Contractors required":"Openings",name:"openings",type:"number",value:1},{label:"Skills & experience",name:"skills",type:"tags",full:true},{label:isC?"Contract / exit terms":"Job description",name:"description",type:"textarea",full:true}
-  ])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Preview & publish</button>`);
+    {label:isAI?"Primary operating region":"Location",name:"location",type:"city"},modeField,
+    commercialField,
+    {label:isAI?"AI agents required":isC?"Contractors required":"Openings",name:"openings",type:"number",value:1},
+    {label:isAI?"Capabilities & integrations":"Skills & experience",name:"skills",type:"tags",full:true},
+    {label:isAI?"Operating instructions & success criteria":isC?"Contract / exit terms":"Job description",name:"description",type:"textarea",full:true}
+  ])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">${isAI?"Submit AI agent request":"Preview & publish"}</button>`);
   bindTagInputs();
-  $(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const clientName=session.role==="Client"?roles.Client.company:d.client;const client=state.clients.find(item=>item.company===clientName);const job={id:nextId("JOB",state.jobs),title:d.title,projectName:d.projectName||"",department:d.department||"",type,client:clientName,clientId:client?.id,location:d.location,mode:d.mode,status:"Active",assignmentStatus:"Pending",urgency:"Medium",recruiter:"",openings:+d.openings,cv:0,interviews:0,offers:0,skills:d.skills,salary:d.salary,date:"13 Jun 2026"};state.jobs.unshift(job);addAssignmentNotification({roles:["Admin"],client:clientName,message:`${job.title} for ${clientName} is awaiting recruiter assignment`});addAssignmentNotification({roles:["Client"],client:clientName,message:`${job.title} was created and is pending Admin recruiter assignment`});save();closeModal();currentPage="jobs";render();toast(`${type} job created. Recruiter assignment is Pending`)};
+  $(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const clientName=session.role==="Client"?roles.Client.company:d.client;const client=state.clients.find(item=>item.company===clientName);const job={id:nextId("JOB",state.jobs),title:d.title,projectName:d.projectName||"",department:d.department||"",type,client:clientName,clientId:client?.id,location:d.location,mode:d.mode,status:"Active",assignmentStatus:"Pending",urgency:"Medium",recruiter:"",openings:+d.openings,cv:0,interviews:0,offers:0,skills:d.skills,salary:d.salary,description:d.description||"",date:"13 Jun 2026"};state.jobs.unshift(job);const requestLabel=isAI?"AI Agent request":`${job.title}`;addAssignmentNotification({roles:["Admin"],client:clientName,message:`${requestLabel} for ${clientName} is awaiting assignment`});addAssignmentNotification({roles:["Client"],client:clientName,message:`${requestLabel} was created and is pending Admin assignment`});save();closeModal();currentPage="jobs";filter=isAI?"AI Agent":"All";render();toast(isAI?"AI Agent request created and sent to Admin":`${type} job created. Recruiter assignment is Pending`)};
 }
 function showAssignmentForm(id){
   const job=state.jobs.find(item=>item.id===id);

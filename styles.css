@@ -179,6 +179,15 @@ textarea { resize: vertical; min-height: 90px; }
 .kpi-link:hover .kpi-arrow, .kpi-link:focus-visible .kpi-arrow { opacity: 1; transform: translateX(0); }
 .grid-2 { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(290px, .8fr); gap: 18px; margin-bottom: 18px; }
 .grid-equal { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px; margin-bottom: 18px; }
+.job-type-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 18px; margin-bottom: 18px; }
+.job-type-card { position: relative; min-height: 310px; padding: 30px; display: flex; flex-direction: column; align-items: flex-start; overflow: hidden; }
+.job-type-card .kpi-icon { position: static; flex: 0 0 auto; margin-bottom: 20px; }
+.job-type-card h2 { margin: 5px 0 14px; font: 800 22px Manrope; }
+.job-type-card p { flex: 1; margin: 0 0 20px; color: var(--muted); line-height: 1.55; }
+.job-type-card .btn { margin-top: auto; }
+.job-type-ai { border-color: rgba(118,79,229,.3); background: linear-gradient(145deg,var(--paper) 58%,#f2edff); box-shadow: 0 14px 34px rgba(83,58,185,.1); }
+.job-type-ai::after { content: ""; position: absolute; right: -60px; top: -70px; width: 190px; height: 190px; border-radius: 50%; background: radial-gradient(circle,rgba(118,79,229,.18),transparent 68%); pointer-events: none; }
+.ai-agent-pill { position: absolute; top: 30px; right: 28px; padding: 5px 9px; border-radius: 99px; color: #6546d2; background: #eee9ff; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .5px; }
 .panel { padding: 20px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; }
 .panel-head h3 { font: 700 16px Manrope; margin: 0; }
@@ -763,6 +772,8 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 [data-theme="dark"] .kpi-icon-network { color: #c19aff; }
 [data-theme="dark"] .kpi-icon-pulse { color: #ff91ae; }
 [data-theme="dark"] .kpi-icon-analytics { color: #96a5ff; }
+[data-theme="dark"] .job-type-ai { background: linear-gradient(145deg,var(--paper) 58%,#251e3d); }
+[data-theme="dark"] .ai-agent-pill { color: #c7b8ff; background: #30274d; }
 [data-theme="dark"] .urgency-badge.urgency-critical { color: #ff9dac; background: #4b2530; }
 [data-theme="dark"] .urgency-badge.urgency-high { color: #ffc28e; background: #493322; }
 [data-theme="dark"] .urgency-badge.urgency-medium { color: #94c2ff; background: #203652; }
@@ -779,6 +790,7 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 
 @media (max-width: 1100px) {
   .kpi-grid { grid-template-columns: repeat(2,1fr); }
+  .job-type-grid { grid-template-columns: repeat(2,1fr); }
   .admin-stage-kpis .kpi-grid { grid-template-columns: repeat(3,1fr); }
   .job-card-grid { grid-template-columns: repeat(2,1fr); }
   .grid-2 { grid-template-columns: 1fr; }
@@ -802,7 +814,7 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
   .mobile-menu { display: block; }
   .content { padding: 22px 16px 40px; }
   .topbar { padding: 0 16px; }
-  .kpi-grid, .grid-equal, .job-card-grid, .form-grid { grid-template-columns: 1fr; }
+  .kpi-grid, .grid-equal, .job-type-grid, .job-card-grid, .form-grid { grid-template-columns: 1fr; }
   .admin-stage-kpis .kpi-grid { grid-template-columns: 1fr; }
   .page-head { flex-direction: column; }
   .page-actions { width: 100%; }
