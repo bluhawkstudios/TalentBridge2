@@ -1080,7 +1080,8 @@ function dashboard(role) {
     ["offer","◇",candidates.filter(candidate=>candidate.stage==="Offered").length,"Candidates at offer stage","Awaiting offer action","2 hr"],
     ["job","▤",activeJobs,"Jobs currently active","Open hiring requirements","4 hr"]
   ];
-  return `${pageHead(`${role} Dashboard`,intro,dashboardDateFilter(role))}
+  const dashboardTitle=role==="Candidate"?`${(state.profile.name||roles.Candidate.user).trim().split(/\s+/)[0]}'s Dashboard`:`${role} Dashboard`;
+  return `${pageHead(dashboardTitle,intro,dashboardDateFilter(role))}
   ${aiSummaryCard(summary)}
   <div class="${role==="Admin"?"admin-stage-kpis":""}">${kpis(metrics)}</div>
   <div class="grid-2">
