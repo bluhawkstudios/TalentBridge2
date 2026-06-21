@@ -22,13 +22,54 @@ const APP_OPTIONS = {
 function profileStateForCity(city){
   return Object.entries(APP_OPTIONS.locationsByState).find(([,cities])=>cities.includes(city))?.[0]||"";
 }
-const PIPELINE_STAGES=["Sourced","Screened","Client Review","AI Interview","L1 Interview","L2 Interview","L3 Interview","Offered","Joined"];
-const INTERVIEW_ROUNDS=["Recruiter Screen","Client L1","L2 – Portfolio","L3 – Leadership / Final","AI Technical","HR Round"];
+function displayDate(date){
+  return date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});
+}
+function formatProfileDate(value){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(value||""))return value||"";
+  const [year,month,day]=value.split("-").map(Number);
+  return displayDate(new Date(year,month-1,day));
+}
+function lastWorkingDateFromNotice(notice){
+  const value=String(notice||"").trim();
+  if(/immediate/i.test(value))return "To be confirmed";
+  const days=Number((value.match(/\d+/)||[])[0]||0);
+  if(!days)return "To be confirmed";
+  const date=new Date();
+  date.setDate(date.getDate()+days);
+  return displayDate(date);
+}
+function candidateLastWorkingDate(candidate){
+  return formatProfileDate(candidate.lastWorkingDay)||formatProfileDate(candidate.lastWorkingDate)||lastWorkingDateFromNotice(candidate.notice);
+}
+const LEAVING_REASONS=[
+  "Looking for stronger career growth and a wider technical scope.",
+  "Seeking a role with better alignment to long-term career goals.",
+  "Project ending and candidate is exploring a stable opportunity.",
+  "Relocation preference and better work-mode fit.",
+  "Compensation and responsibility growth expectations."
+];
+const PIPELINE_STAGES=["Sourced","Screened","AI Interview","Client Review","L1 Interview","L2 Interview","L3 Interview","Offered","Joined"];
+const INTERVIEW_ROUNDS=["Recruiter Screen","AI Technical","Client L1","L2 – Portfolio","L3 – Leadership / Final","HR Round"];
+const STAGE_ALIASES={Applied:"Sourced",AI:"AI Interview",Client:"Client Review",Interview:"L1 Interview",Offer:"Offered"};
+const stageName = value => STAGE_ALIASES[String(value)]||String(value);
+const stageClass = value => {
+  const name=stageName(value);
+  return PIPELINE_STAGES.includes(name)?`stage-color stage-${name.toLowerCase().replace(/[^a-z0-9]+/g,"-")}`:"";
+};
+const pipelineBarHeight = (value,max,plotHeight=145) => value>0?Math.max(18,Math.round(value/Math.max(max,1)*plotHeight)):3;
+const matchesPipelineFilter = (candidate,value) => {
+  if(value==="All")return true;
+  if(value==="Interview")return /L[123] Interview/.test(candidate.stage);
+  if(value==="Offer")return candidate.stage==="Offered";
+  return candidate.type===value||candidate.stage===value;
+};
+const pipelineDestination = role => role==="Client"?"cv-review":role==="Recruiter"?"sourcing":role==="Candidate"?"applications":"candidates";
 
 const roles = {
   Client: {
     user: "Ananya Sharma", company: "Northstar Systems", email: "client@talentos.ai",
-    nav: [["ai-recruiter","AI Recruiter","✦"],["dashboard","Dashboard","⌂"],["job-type","Post a Job","＋"],["jobs","My Job Listings","▤"],["cv-review","CV Review","◫"],["interviews","Interviews","◷"],["offers","Offers & Contracts","◇"],["documents","Documents","▱"]]
+    nav: [["dashboard","Dashboard","⌂"],["job-type","Post a Job","＋"],["jobs","My Job Listings","▤"],["cv-review","CV Review","◫"],["interviews","Interviews","◷"],["offers","Offers & Contracts","◇"],["documents","Documents","▱"]]
   },
   Admin: {
     user: "Arjun Mehta", company: "TalentOS Admin", email: "admin@talentos.ai",
@@ -144,10 +185,14 @@ function buildSimulationData() {
   const lastNames=["Kapoor","Iyer","Singh","Khan","Rao","Sharma","Patel","Menon","Gupta","Mehta","Nair","Das","Jain","Roy","Bose","Suri","Bhat","Paul","Malhotra","Chopra"];
   const stages=PIPELINE_STAGES;
   const notices=["Immediate","15 days","30 days","45 days","60 days"];
+  const clientStageCounters={};
   const candidates=Array.from({length:100},(_,index)=>{
     const job=jobs[index%jobs.length];
     const name=index===0?"Rohan Kapoor":`${firstNames[(index+7)%firstNames.length]} ${lastNames[(index*3+2)%lastNames.length]}`;
-    const stage=index===0?"L2 Interview":stages[index%stages.length];
+    const clientSequence=clientStageCounters[job.client]||0;
+    clientStageCounters[job.client]=clientSequence+1;
+    const clientOffset=clients.findIndex(client=>client.company===job.client)*2;
+    const stage=index===0?"L2 Interview":stages[(clientSequence+clientOffset)%stages.length];
     return {
       id:`CAN-${3001+index}`,name,jobId:job.id,role:job.title,type:job.type,client:job.client,
       recruiter:job.recruiter,stage,score:68+(index*7%31),location:locations[(index+2)%locations.length],
@@ -210,7 +255,7 @@ function buildSimulationData() {
       date:`${String(1+(index%20)).padStart(2,"0")} Jun 2026`
     };
   });
-  return {simulationVersion:6,clients,recruiters,jobs,candidates,interviews,users,leads,notifications,assignmentNotifications:[],documents};
+  return {simulationVersion:7,clients,recruiters,jobs,candidates,interviews,users,leads,notifications,assignmentNotifications:[],documents};
 }
 
 const storedState = JSON.parse(localStorage.getItem("talentos-state") || "null");
@@ -237,7 +282,7 @@ state.profile.experienceEntries=Array.isArray(state.profile.experienceEntries)&&
 state.profile.experienceEntries=state.profile.experienceEntries.map(entry=>{
   const designation=String(entry.designation||"").trim();
   const durationOnly=/^\d+(?:\.\d+)?\s*(?:years?|yrs?|months?|mos?)$/i.test(designation);
-  return {...entry,designation:durationOnly?"":designation};
+  return {...entry,designation:durationOnly?"":designation,reasonForLeaving:entry.reasonForLeaving||""};
 });
 state.profile.experienceGapReason ||= "";
 state.profile.completion=profileCompletionPercent(state.profile);
@@ -259,21 +304,33 @@ state.externalTalent=state.externalTalent.map((profile,index)=>({
   ...profile,
   summary:profile.summary||`${profile.role} with ${profile.experience} years of experience across ${profile.skills}. Experienced in delivering outcomes in fast-paced teams.`,
   experienceEntries:profile.experienceEntries||[
-    {company:profile.currentCompany,designation:profile.role,startMonth:`${2018+(index%4)}-01`,endMonth:"2026-06"},
-    {company:["Tech Mahindra","Cognizant","Capgemini","HCLTech"][index%4],designation:index%2?"Consultant":"Specialist",startMonth:`${2014+(index%3)}-06`,endMonth:`${2017+(index%4)}-12`}
+    {company:profile.currentCompany,designation:profile.role,startMonth:`${2018+(index%4)}-01`,endMonth:"2026-06",reasonForLeaving:LEAVING_REASONS[index%LEAVING_REASONS.length]},
+    {company:["Tech Mahindra","Cognizant","Capgemini","HCLTech"][index%4],designation:index%2?"Consultant":"Specialist",startMonth:`${2014+(index%3)}-06`,endMonth:`${2017+(index%4)}-12`,reasonForLeaving:LEAVING_REASONS[(index+1)%LEAVING_REASONS.length]}
   ],
   educationEntries:profile.educationEntries||[{degree:profile.education,institute:["IIT Delhi","Pune University","Anna University","Mumbai University"][index%4],year:String(2012+(index%8)),percentage:`${72+(index%18)}%`}]
 }));
 state.candidates=state.candidates.map((candidate,index)=>{
   const isProfileCandidate=candidate.name===state.profile.name||candidate.email===state.profile.email;
   const sourcedProfile=state.externalTalent.find(profile=>profile.id===candidate.sourceProfileId);
+  const profileLastWorkingDate=isProfileCandidate&&state.profile.lastWorkingDay?state.profile.lastWorkingDay:"";
+  const storedLastWorkingDate=String(candidate.lastWorkingDate||"").trim();
   return {
     ...candidate,
+    lastWorkingDay:candidate.lastWorkingDay||profileLastWorkingDate,
+    lastWorkingDate:profileLastWorkingDate||(/immediate/i.test(storedLastWorkingDate)?"":storedLastWorkingDate)||candidate.lastWorkingDay||lastWorkingDateFromNotice(candidate.notice),
+    reasonForLeaving:candidate.reasonForLeaving||LEAVING_REASONS[index%LEAVING_REASONS.length],
     summary:candidate.summary||(isProfileCandidate?`${state.profile.experienceEntries?.[0]?.designation||candidate.role} experienced in ${state.profile.skills}.`:sourcedProfile?.summary||`${candidate.role} with experience in ${candidate.skills}, currently available in ${candidate.location}.`),
-    experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||[{company:candidate.client||"Previous employer",designation:candidate.role,startMonth:`${2018+(index%5)}-01`,endMonth:"2026-06"}]),
+    experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||[{company:candidate.client||"Previous employer",designation:candidate.role,startMonth:`${2018+(index%5)}-01`,endMonth:"2026-06",reasonForLeaving:LEAVING_REASONS[index%LEAVING_REASONS.length]}]),
     educationEntries:candidate.educationEntries||(isProfileCandidate?state.profile.educationEntries:sourcedProfile?.educationEntries||[{degree:["B.Tech","MBA","M.Sc","B.Des"][index%4],institute:["State University","National Institute of Technology","Business School","Design Institute"][index%4],year:String(2014+(index%9)),percentage:`${70+(index%20)}%`}])
   };
 });
+state.candidates=state.candidates.map((candidate,index)=>({
+  ...candidate,
+  experienceEntries:(candidate.experienceEntries||[]).map((entry,entryIndex)=>({
+    ...entry,
+    reasonForLeaving:entry.reasonForLeaving||candidate.reasonForLeaving||LEAVING_REASONS[(index+entryIndex)%LEAVING_REASONS.length]
+  }))
+}));
 const talentBridgeProfiles=state.candidates.map((candidate,index)=>({
   id:`TBD-${candidate.id}`,candidateId:candidate.id,name:candidate.name,role:candidate.role,skills:candidate.skills,
   location:candidate.location,score:candidate.score,experience:Math.max(1,candidate.experienceEntries?.length?candidate.experienceEntries.length*3:2+(index%10)),
@@ -306,15 +363,16 @@ state.jobs.forEach(job=>{
 });
 localStorage.setItem("talentos-state",JSON.stringify(state));
 let session = JSON.parse(localStorage.getItem("talentos-session") || "null");
-let currentPage = session?.role==="Client" ? "ai-recruiter" : "dashboard";
+let currentPage = "dashboard";
 let filter = "All";
 let teamChatOpen = false;
 let activeRecruiter = "Priya Nair";
+let clientAiOpen = false;
 let theme = localStorage.getItem("talentbridge-theme") || "light";
 let interviewView = "Upcoming";
 let interviewCalendarDate = new Date(2026,5,1);
 let aiSourcingView = "Grid";
-let activeConversation = "Priya Nair";
+let activeConversation = "";
 let pageFilterState = {};
 document.documentElement.dataset.theme = theme;
 
@@ -408,6 +466,8 @@ const nextId = (prefix, records) => {
 };
 const badge = (text) => {
   const t = String(text);
+  const pipelineClass=stageClass(t);
+  if(pipelineClass)return `<span class="badge stage-badge ${pipelineClass}"><i class="dot"></i>${esc(t)}</span>`;
   const cls = /active|confirmed|offered|accepted|paid|qualified|complete/i.test(t) ? "green" : /hold|pending|proposal|review|interview/i.test(t) ? "orange" : /reject|closed|overdue|declined/i.test(t) ? "red" : /contract|ai|new/i.test(t) ? "blue" : "purple";
   return `<span class="badge badge-${cls}"><i class="dot"></i>${esc(t)}</span>`;
 };
@@ -430,6 +490,21 @@ const parseAppDate = value => {
 };
 const dashboardFilterKey = role => `dashboard-${role}`;
 const dashboardDateState = role => pageFilterState[dashboardFilterKey(role)]||{};
+const dateInputValue = date => {
+  const year=date.getFullYear();
+  const month=String(date.getMonth()+1).padStart(2,"0");
+  const day=String(date.getDate()).padStart(2,"0");
+  return `${year}-${month}-${day}`;
+};
+const dashboardPresetRange = (preset,now=new Date()) => {
+  const end=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const start=new Date(end);
+  if(preset==="Yesterday"){start.setDate(start.getDate()-1);end.setDate(end.getDate()-1)}
+  if(preset==="Last 7 Days")start.setDate(start.getDate()-6);
+  if(preset==="Last 1 Month")start.setMonth(start.getMonth()-1);
+  if(preset==="Last 3 Months")start.setMonth(start.getMonth()-3);
+  return {preset,dateFrom:dateInputValue(start),dateTo:dateInputValue(end)};
+};
 const dateInDashboardRange = (value,role) => {
   const current=dashboardDateState(role);
   const recordDate=parseAppDate(value);
@@ -503,6 +578,7 @@ function render() {
         <div class="content">${renderPage()}</div>
       </main>
       ${["Admin","Recruiter"].includes(session.role) ? renderTeamChat() : ""}
+      ${session.role==="Client" ? renderClientAiRecruiterWidget() : ""}
     </div>`;
   bindShell();
   bindPage();
@@ -530,7 +606,7 @@ function renderLogin() {
     selected = b.dataset.role; $$(".role-card").forEach(x => x.classList.toggle("active", x===b));
     $("#login-email").value = roles[selected].email; $("#login-btn").textContent = `Enter ${selected} workspace →`;
   });
-  $("#login-btn").onclick = () => { session = {role:selected}; currentPage=selected==="Client"?"ai-recruiter":"dashboard"; localStorage.setItem("talentos-session",JSON.stringify(session)); render(); };
+  $("#login-btn").onclick = () => { session = {role:selected}; currentPage="dashboard"; localStorage.setItem("talentos-session",JSON.stringify(session)); render(); };
 }
 
 function bindShell() {
@@ -666,7 +742,7 @@ function standardFilterBar() {
       ${["All types","Permanent","Contract"].map(value=>`<option ${current.type===value?"selected":""}>${value}</option>`).join("")}
     </select>`:""}
     ${statusOptions[currentPage]?`<select id="page-filter-status" aria-label="Filter by status">
-      ${["All statuses",...statusOptions[currentPage]].map(value=>`<option ${current.status===value?"selected":""}>${value}</option>`).join("")}
+      ${["All statuses",...statusOptions[currentPage]].map(value=>`<option class="${stageClass(value)}" ${current.status===value?"selected":""}>${value}</option>`).join("")}
     </select>`:""}
     ${ownerPages.includes(currentPage)?`<select id="page-filter-owner" aria-label="Filter by owner">
       <option>All owners</option>${owners.map(value=>`<option ${current.owner===value?"selected":""}>${value}</option>`).join("")}
@@ -685,21 +761,42 @@ function standardFilterBar() {
 }
 function dashboardDateFilter(role) {
   const current=dashboardDateState(role);
-  const active=current.dateFrom||current.dateTo;
-  return `<div class="card dashboard-date-filter">
-    <div class="dashboard-date-title"><span>◷</span><div><b>Custom date filter</b><small>Updates all dashboard metrics and sections</small></div></div>
-    <label>From <input type="date" id="dashboard-date-from" value="${esc(current.dateFrom||"")}"></label>
-    <label>To <input type="date" id="dashboard-date-to" value="${esc(current.dateTo||"")}"></label>
-    <button class="btn btn-primary" id="apply-dashboard-date">Apply</button>
-    <button class="btn btn-secondary" id="clear-dashboard-date" ${active?"":"disabled"}>Clear</button>
-    <span class="dashboard-date-summary">${active?`${current.dateFrom||"Start"} to ${current.dateTo||"Today"}`:"Showing all dates"}</span>
+  const active=current.dateFrom||current.dateTo||current.preset;
+  return `<div class="dashboard-date-filter ${active?"active":""}" aria-label="Dashboard date filter">
+    ${role==="Client"?`<select id="dashboard-date-preset" aria-label="Quick date range" title="Quick date range">${["Custom dates","All time","Today","Yesterday","Last 7 Days","Last 1 Month","Last 3 Months"].map(value=>`<option value="${value}" ${(current.preset||"Custom dates")===value?"selected":""}>${value}</option>`).join("")}</select>`:""}
+    <label><span>From</span><input type="date" id="dashboard-date-from" aria-label="From date" value="${esc(current.dateFrom||"")}"></label>
+    <label><span>To</span><input type="date" id="dashboard-date-to" aria-label="To date" value="${esc(current.dateTo||"")}"></label>
+    <button class="dashboard-date-clear" id="clear-dashboard-date" aria-label="Clear dashboard date filter" title="Clear date filter" ${active?"":"disabled"}>×</button>
   </div>`;
 }
+function kpiIcon(label="") {
+  const value=label.toLowerCase();
+  let type="analytics";
+  if(/profile complete|profile strength/.test(value))type="profile";
+  else if(/interview/.test(value))type="calendar";
+  else if(/offer|placement|joined|conversion/.test(value))type="award";
+  else if(/candidate|cv|profile|sourced|shortlist|user|recruiter/.test(value))type="people";
+  else if(/job|application|assigned/.test(value))type="briefcase";
+  else if(/provider|source|integration|connected/.test(value))type="network";
+  else if(/sync|health|active/.test(value))type="pulse";
+  const icons={
+    briefcase:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 7V5.8A1.8 1.8 0 0 1 10.8 4h2.4A1.8 1.8 0 0 1 15 5.8V7"/><rect x="3" y="7" width="18" height="12" rx="2.5"/><path d="M3 11.5c4.7 2.3 13.3 2.3 18 0M10 12h4"/></svg>`,
+    calendar:`<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2.5"/><path d="M8 3v4M16 3v4M3 10h18"/><path d="m9 15 2 2 4-4"/></svg>`,
+    profile:`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.2"/><path d="M5.5 20c.7-4 3-6 6.5-6s5.8 2 6.5 6"/><path d="m17 10.5 1.4 1.4 2.6-3"/></svg>`,
+    award:`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="9" r="5"/><path d="m8.8 13-1 8 4.2-2.4 4.2 2.4-1-8"/><path d="m10 9 1.3 1.3L14.5 7"/></svg>`,
+    people:`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3.5 20c.5-4 2.3-6 5.5-6s5 2 5.5 6"/><circle cx="17.5" cy="9" r="2.2"/><path d="M15.5 15c3.1-.7 5 .9 5.5 4"/></svg>`,
+    network:`<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="m8.2 10.8 7.6-3.6M8.2 13.2l7.6 3.6"/></svg>`,
+    pulse:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2.2-5 4.2 10 2.2-5H21"/><circle cx="12" cy="12" r="9"/></svg>`,
+    analytics:`<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/><path d="m4 7 6-4 6 6 5-5"/></svg>`
+  };
+  return {type,svg:icons[type]};
+}
 function kpis(items) {
-  return `<div class="kpi-grid">${items.map((x,i)=>{
-    const className = `card kpi${x[3] ? " kpi-link" : ""}`;
+  return `<div class="kpi-grid">${items.map(x=>{
+    const className = `card kpi${x[3] ? " kpi-link" : ""}${x[5]?` ${stageClass(x[5])}`:""}`;
     const attributes = x[3] ? `data-go="${x[3]}" ${x[4] ? `data-view-filter="${x[4]}"` : ""} role="link" tabindex="0" aria-label="View details for ${x[0]}"` : "";
-    return `<div class="${className}" ${attributes}><div class="kpi-label">${x[0]}</div><div class="kpi-value">${x[1]}</div><div class="trend">${x[2]}</div><span class="kpi-icon">${["▤","♧","◷","◇"][i%4]}</span>${x[3]?`<span class="kpi-arrow">→</span>`:""}</div>`;
+    const icon=kpiIcon(x[0]);
+    return `<div class="${className}" ${attributes}><div class="kpi-label">${x[0]}</div><div class="kpi-value">${x[1]}</div><div class="trend">${x[2]}</div><span class="kpi-icon kpi-icon-${icon.type}">${icon.svg}</span>${x[3]?`<span class="kpi-arrow">→</span>`:""}</div>`;
   }).join("")}</div>`;
 }
 function dashboardAiSummary(role,{jobs,candidates,interviews,offers,activeJobs}){
@@ -821,6 +918,22 @@ function aiRecruiterPage(){
     </div>
   </section>`;
 }
+function robotIconSvg(){
+  return `<svg viewBox="0 0 64 64" aria-hidden="true"><rect x="14" y="20" width="36" height="30" rx="11"></rect><path d="M32 20v-8"></path><circle cx="32" cy="10" r="4"></circle><circle cx="25" cy="34" r="3"></circle><circle cx="39" cy="34" r="3"></circle><path d="M26 43h12"></path><path d="M14 35H8M56 35h-6"></path></svg>`;
+}
+function renderClientAiRecruiterWidget(){
+  const chat=state.clientAiRecruiter;
+  return `<button class="client-ai-bot-bubble ${clientAiOpen?"active":""}" id="client-ai-bot-bubble" aria-label="Open AI Recruiter chat">
+      ${robotIconSvg()}
+    </button>
+    <section class="client-ai-bot-panel ${clientAiOpen?"open":""}" id="client-ai-bot-panel" aria-label="AI Recruiter chat">
+      <header class="ai-recruiter-head"><div class="ai-recruiter-orb">${robotIconSvg()}</div><div><h1>AI Recruiter</h1><p>Ask hiring questions or create a JD</p></div><button class="mini-btn" id="ai-new-conversation">New</button><button class="client-ai-close" id="client-ai-close" aria-label="Close AI Recruiter">×</button></header>
+      <div class="ai-recruiter-messages" id="ai-recruiter-messages">${chat.messages.map(aiRecruiterMessageMarkup).join("")}</div>
+      <div class="ai-quick-replies">${aiRecruiterQuickReplies()}</div>
+      <form class="ai-recruiter-compose" id="ai-recruiter-form"><input id="ai-recruiter-input" autocomplete="off" placeholder="${chat.step==="idle"?"Ask or say: create a job...":"Type your answer..."}" ${chat.step==="permission"?"disabled":""} required><button class="btn btn-primary" ${chat.step==="permission"?"disabled":""}>Send</button></form>
+      <p class="ai-recruiter-note">Jobs are created only after your approval and then sent to Admin for recruiter assignment.</p>
+    </section>`;
+}
 function addAiRecruiterMessage(from,text,extra={}){
   state.clientAiRecruiter.messages.push({from,text,time:"Just now",...extra});
 }
@@ -938,30 +1051,44 @@ function dashboard(role) {
     : allInterviews.filter(interview => roleCandidateRecords.find(candidate=>candidate.id===interview.candidateId)?.type===filter);
   const offers = candidates.filter(candidate => ["Offered","Joined"].includes(candidate.stage)).length;
   const activeJobs = jobs.filter(job => job.status === "Active").length;
+  const adminStageMetrics = PIPELINE_STAGES.map(stage=>[
+    stage,
+    candidates.filter(candidate=>candidate.stage===stage).length,
+    `${candidates.filter(candidate=>candidate.stage===stage).length} candidate${candidates.filter(candidate=>candidate.stage===stage).length===1?"":"s"} in ${stage}`,
+    "candidates",
+    stage,
+    stage
+  ]);
   const metrics = role==="Candidate" ? [["Active applications",jobs.length,"Current applications","applications"],["Upcoming interviews",interviews.length,interviews.length ? "Next interview scheduled" : "No interviews scheduled","interviews"],["Profile complete",`${state.profile.completion}%`,"Profile strength","profile"],["Offers",offers,"Awaiting response","offers"]] :
     role==="Client" ? [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["CVs to review",candidates.length,"Profiles received","cv-review"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Offers open",offers,"At offer stage","offers"]] :
     role==="Recruiter" ? [["Assigned jobs",jobs.length,`${activeJobs} active`,"jobs"],["Candidates sourced",candidates.length,"In assigned pipelines","sourcing"],["Interviews",interviews.length,"Scheduled interviews","interviews"],["Placements",candidates.filter(candidate => candidate.stage === "Joined").length,"Joined candidates","sourcing","Joined"]] :
-    [["Active jobs",activeJobs,`${jobs.length} total jobs`,"jobs","Active"],["Candidates in pipeline",candidates.length,"All active profiles","candidates"],["Interviews scheduled",interviews.length,"All scheduled interviews","interviews"],["Offers in pipeline",offers,"Offered or joined","candidates","Offer pipeline"]];
+    adminStageMetrics;
   const stageGroups = [
-    ["Sourced", candidates.length],
-    ["Screened", candidates.filter(candidate => candidate.stage !== "Sourced").length],
-    ["Submitted", candidates.filter(candidate => !["Sourced","Screened"].includes(candidate.stage)).length],
-    ["Interview", candidates.filter(candidate => /Interview/.test(candidate.stage)).length],
-    ["Offer", candidates.filter(candidate => ["Offered","Joined"].includes(candidate.stage)).length],
-    ["Joined", candidates.filter(candidate => candidate.stage === "Joined").length]
+    ["Sourced", candidates.filter(candidate => candidate.stage==="Sourced").length,"Sourced","Sourced"],
+    ["Screened", candidates.filter(candidate => candidate.stage==="Screened").length,"Screened","Screened"],
+    ["AI Interview", candidates.filter(candidate => candidate.stage==="AI Interview").length,"AI Interview","AI Interview"],
+    ["Client Review", candidates.filter(candidate => candidate.stage==="Client Review").length,"Client Review","Client Review"],
+    ["Interview", candidates.filter(candidate => /L[123] Interview/.test(candidate.stage)).length,"L1 Interview","Interview"],
+    ["Offer", candidates.filter(candidate => candidate.stage==="Offered").length,"Offered","Offer"],
+    ["Joined", candidates.filter(candidate => candidate.stage === "Joined").length,"Joined","Joined"]
   ];
   const maxStage = Math.max(...stageGroups.map(stage => stage[1]), 1);
   const summary=dashboardAiSummary(role,{jobs,candidates,interviews,offers,activeJobs});
-  return `${pageHead(`${role} Dashboard`,intro)}
+  const activityItems=[
+    ["match","✦",candidates.filter(candidate=>candidate.score>=90).length,"High-match profiles","AI score of 90% or higher","8 min"],
+    ["interview","◷",interviews.filter(interview=>interview.status==="Confirmed").length,"Interviews confirmed","Ready on the schedule","35 min"],
+    ["offer","◇",candidates.filter(candidate=>candidate.stage==="Offered").length,"Candidates at offer stage","Awaiting offer action","2 hr"],
+    ["job","▤",activeJobs,"Jobs currently active","Open hiring requirements","4 hr"]
+  ];
+  return `${pageHead(`${role} Dashboard`,intro,dashboardDateFilter(role))}
   ${aiSummaryCard(summary)}
-  ${dashboardDateFilter(role)}
-  ${kpis(metrics)}
+  <div class="${role==="Admin"?"admin-stage-kpis":""}">${kpis(metrics)}</div>
   <div class="grid-2">
     <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"My applications":"Hiring pipeline"}</h3>${tabs()}</div>
-      <div class="funnel">${stageGroups.map(stage=>`<div class="bar-set"><div class="bar" style="height:${Math.max(9,Math.round(stage[1]/maxStage*100))}%"><b>${stage[1]}</b></div><small>${stage[0]}</small></div>`).join("")}</div>
+      <div class="funnel">${stageGroups.map(stage=>`<div class="bar-set pipeline-bar-link ${stageClass(stage[2])}" data-go="${pipelineDestination(role)}" data-view-filter="${stage[3]}" role="link" tabindex="0" aria-label="View ${stage[1]} candidates in ${stage[0]}"><div class="bar" style="height:${pipelineBarHeight(stage[1],maxStage)}px"><b>${stage[1]}</b></div><small>${stage[0]}</small></div>`).join("")}</div>
     </div>
-    <div class="card panel"><div class="panel-head"><h3>Recent activity</h3><a>View all</a></div><div class="activity">
-      ${[["✦",`${candidates.filter(candidate=>candidate.score>=90).length} high-match profiles in this view`,"8 min"],["◷",`${interviews.filter(interview=>interview.status==="Confirmed").length} interviews confirmed`,"35 min"],["◇",`${candidates.filter(candidate=>candidate.stage==="Offered").length} candidates at offer stage`,"2 hr"],["▤",`${activeJobs} jobs currently active`,"4 hr"]].map(x=>`<div class="activity-item"><span class="activity-icon">${x[0]}</span><p>${x[1]}</p><time>${x[2]}</time></div>`).join("")}
+    <div class="card panel recent-activity-panel"><div class="panel-head"><div><h3>Recent activity</h3><small>Live hiring signals</small></div><a data-go="${pipelineDestination(role)}">View all <span>→</span></a></div><div class="activity dashboard-activity">
+      ${activityItems.map(item=>`<div class="activity-item activity-${item[0]}"><span class="activity-icon">${item[1]}</span><div class="activity-copy"><p><b>${item[2]}</b> ${item[3]}</p><small>${item[4]}</small></div><time>${item[5]}</time></div>`).join("")}
     </div></div>
   </div>
   <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"Active applications":"Priority jobs"}</h3><a data-go="${role==="Candidate"?"applications":"jobs"}">View all</a></div>
@@ -995,11 +1122,20 @@ function candidatesPage(role, page) {
   const isClientReview=role==="Client"&&page==="cv-review";
   const action = isClientReview?"":`<button class="btn btn-secondary" data-bulk-upload="candidates">⇧ Bulk upload</button><button class="btn btn-secondary" id="upload-cv">⇧ Upload CV</button><button class="btn btn-primary" id="new-candidate">＋ Add candidate</button>`;
   const scopedCandidates=roleCandidates(role);
+  const colCount=isClientReview?9:8;
+  const lastWorkingHead=isClientReview?`<th>Last Working Date</th>`:"";
+  const rows=scopedCandidates
+    .filter(c=>matchesPipelineFilter(c,filter)||(filter==="Offer pipeline"&&["Offered","Joined"].includes(c.stage)))
+    .map(c=>{
+      const visible=revealCandidateIdentity(c);
+      const lastWorkingCell=isClientReview?`<td><button class="last-working-link" data-id="${c.id}">${esc(candidateLastWorkingDate(c))}</button></td>`:"";
+      return `<tr data-filter-type="${c.type}" data-filter-status="${c.stage} ${c.clientReviewStatus}" data-filter-owner="${c.recruiter}"><td>${person(candidateDisplayName(c),visible?c.location:"Identity protected")}</td><td><b>${c.role}</b><br><small>${c.client} · ${c.skills}</small></td><td>${badge(c.type)}</td><td><b style="color:${c.score>89?"var(--green)":"var(--purple)"}">${c.score}%</b></td><td>${c.notice}</td>${lastWorkingCell}<td>${badge(c.stage)}</td><td>${isClientReview?`<select class="client-review-status" data-id="${c.id}" aria-label="Client decision for ${esc(candidateDisplayName(c))}"><option value="Awaiting Review" ${c.clientReviewStatus==="Awaiting Review"?"selected":""}>Awaiting Review</option>${["Shortlist","Select","Reject"].map(status=>`<option ${c.clientReviewStatus===status?"selected":""}>${status}</option>`).join("")}</select>`:clientReviewBadge(c.clientReviewStatus)}</td><td><div class="row-actions"><button class="mini-btn view-candidate" data-id="${c.id}">Profile</button>${isClientReview?"":`<button class="mini-btn move-candidate" data-id="${c.id}">Move</button><button class="mini-btn message-candidate" data-id="${c.id}">Message</button>`}</div></td></tr>`;
+    }).join("");
   return `${pageHead(title,sub,action)}
   ${page==="sourcing"?kpis([["AI matches",scopedCandidates.filter(candidate=>candidate.score>=85).length,"Score 85% or higher"],["Internal profiles",state.candidates.length,"Shared talent database"],["New uploads",scopedCandidates.filter(candidate=>candidate.stage==="Sourced").length,"Ready for screening"],["Duplicates stopped",Math.floor(state.candidates.length*.07),"Simulation quality check"]]):""}
-  <div class="card panel"><div class="filter-row">${tabs()}<select id="candidate-stage" style="width:180px"><option>All pipeline stages</option>${PIPELINE_STAGES.map(x=>`<option>${x}</option>`).join("")}</select></div>
-  <div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Type</th><th>AI match</th><th>Availability</th><th>Stage</th><th>Client decision</th><th>Actions</th></tr></thead><tbody>
-  ${scopedCandidates.filter(c=>filter==="All" || c.type===filter || c.stage===filter || (filter==="Offer pipeline" && ["Offered","Joined"].includes(c.stage))).map(c=>{const visible=revealCandidateIdentity(c);return `<tr data-filter-type="${c.type}" data-filter-status="${c.stage} ${c.clientReviewStatus}" data-filter-owner="${c.recruiter}"><td>${person(candidateDisplayName(c),visible?c.location:"Identity protected")}</td><td><b>${c.role}</b><br><small>${c.client} · ${c.skills}</small></td><td>${badge(c.type)}</td><td><b style="color:${c.score>89?"var(--green)":"var(--purple)"}">${c.score}%</b></td><td>${c.notice}</td><td>${badge(c.stage)}</td><td>${isClientReview?`<select class="client-review-status" data-id="${c.id}" aria-label="Client decision for ${esc(candidateDisplayName(c))}"><option value="Awaiting Review" ${c.clientReviewStatus==="Awaiting Review"?"selected":""}>Awaiting Review</option>${["Shortlist","Select","Reject"].map(status=>`<option ${c.clientReviewStatus===status?"selected":""}>${status}</option>`).join("")}</select>`:clientReviewBadge(c.clientReviewStatus)}</td><td><div class="row-actions"><button class="mini-btn view-candidate" data-id="${c.id}">Profile</button>${isClientReview?"":`<button class="mini-btn move-candidate" data-id="${c.id}">Move</button><button class="mini-btn message-candidate" data-id="${c.id}">Message</button>`}</div></td></tr>`}).join("") || `<tr><td colspan="8" class="empty">No records match this dashboard metric.</td></tr>`}
+  <div class="card panel"><div class="filter-row">${tabs()}<select id="candidate-stage" style="width:180px"><option ${filter==="All"?"selected":""}>All pipeline stages</option><option value="Interview" ${filter==="Interview"?"selected":""}>Interview (L1-L3)</option>${PIPELINE_STAGES.map(x=>`<option class="${stageClass(x)}" ${filter===x||filter==="Offer"&&x==="Offered"?"selected":""}>${x}</option>`).join("")}</select></div>
+  <div class="table-wrap"><table><thead><tr><th>Candidate</th><th>Role</th><th>Type</th><th>AI match</th><th>Availability</th>${lastWorkingHead}<th>Stage</th><th>Client decision</th><th>Actions</th></tr></thead><tbody>
+  ${rows || `<tr><td colspan="${colCount}" class="empty">No records match this dashboard metric.</td></tr>`}
   </tbody></table></div></div>`;
 }
 
@@ -1039,15 +1175,53 @@ function interviewsPage(role,page) {
   </tbody></table></div>`}</div>`;
 }
 
+function assignedRecruiterForCandidate(candidate) {
+  return candidate?.recruiter || state.jobs.find(job=>job.id===candidate?.jobId)?.recruiter || "Pending assignment";
+}
+function ensureCandidateRecruiterThread(candidate) {
+  state.candidateRecruiterChats ||= {};
+  if (!candidate) return [];
+  if (!state.candidateRecruiterChats[candidate.id]) {
+    state.candidateRecruiterChats[candidate.id] = candidate.name===roles.Candidate.user
+      ? (state.messages||seed.messages).map(message=>({
+          sender:message.sender||message.from||(message.me?roles.Candidate.user:assignedRecruiterForCandidate(candidate)),
+          text:message.text,
+          time:message.time
+        }))
+      : [];
+  }
+  return state.candidateRecruiterChats[candidate.id];
+}
 function communicationPage() {
-  const conversations=[["Priya Nair","Senior Product Designer","10:33 AM"],["Ananya Sharma","Data Engineer","Yesterday"],["Meera Iyer","Contract documents","Mon"]];
-  const selected=conversations.find(item=>item[0]===activeConversation)||conversations[0];
-  return `${pageHead("Communication Hub","Keep every hiring conversation connected to its context.")}
-  <div class="card chat-shell"><aside class="chat-list"><div class="chat-search"><input id="conversation-search" placeholder="Search conversations..." /></div>
-  ${conversations.map(x=>`<button type="button" class="conversation ${x[0]===selected[0]?"active":""}" data-conversation="${x[0]}"><span class="avatar">${initials(x[0])}</span><div style="min-width:0"><b>${x[0]}</b><p>${x[1]}</p></div><small>${x[2]}</small></button>`).join("")}</aside>
-  <section class="chat-main"><div class="chat-head"><span class="avatar">${initials(selected[0])}</span><div><b>${selected[0]}</b><br><small style="color:var(--green)">● Online · ${selected[1]}</small></div></div>
-  <div class="messages">${state.messages.map(m=>`<div class="bubble ${m.me?"me":""}">${esc(m.text)}<small>${m.time}</small></div>`).join("")}</div>
-  <form class="message-compose" id="message-form"><button type="button" class="icon-btn">＋</button><input id="message-input" placeholder="Write a message..." required /><button class="btn btn-primary">Send</button></form></section></div>`;
+  const isCandidate=session.role==="Candidate";
+  const visibleCandidates=isCandidate?roleCandidates("Candidate").slice(0,1):roleCandidates("Recruiter");
+  const selectedCandidate=visibleCandidates.find(candidate=>candidate.id===activeConversation)||visibleCandidates[0];
+  if (!selectedCandidate) {
+    return `${pageHead(isCandidate?"Communication":"Communication Hub",isCandidate?"Private messages with your assigned recruiter.":"Message candidates linked to your assigned jobs.")}
+      <div class="card panel empty">No linked recruiter conversation is available yet.</div>`;
+  }
+  activeConversation=selectedCandidate.id;
+  const recruiter=assignedRecruiterForCandidate(selectedCandidate);
+  const contactName=isCandidate?recruiter:selectedCandidate.name;
+  const contactContext=isCandidate?`${selectedCandidate.role} · Assigned recruiter`:`${selectedCandidate.role} · ${selectedCandidate.client}`;
+  const conversations=visibleCandidates.map(candidate=>{
+    const messages=ensureCandidateRecruiterThread(candidate);
+    const lastMessage=messages[messages.length-1];
+    return {
+      id:candidate.id,
+      name:isCandidate?assignedRecruiterForCandidate(candidate):candidate.name,
+      context:isCandidate?`${candidate.role} · Your recruiter`:`${candidate.role} · ${candidate.client}`,
+      time:lastMessage?.time||"New"
+    };
+  });
+  const messages=ensureCandidateRecruiterThread(selectedCandidate);
+  return `${pageHead(isCandidate?"Communication":"Communication Hub",isCandidate?"Your private conversation with your assigned recruiter.":"Candidate conversations for jobs assigned to you.")}
+  <div class="card chat-shell ${isCandidate?"candidate-private-chat":""}"><aside class="chat-list">
+    ${isCandidate?`<div class="private-chat-label"><span>●</span> Private recruiter conversation</div>`:`<div class="chat-search"><input id="conversation-search" placeholder="Search candidates..." /></div>`}
+    ${conversations.map(conversation=>`<button type="button" class="conversation ${conversation.id===selectedCandidate.id?"active":""}" data-conversation="${conversation.id}"><span class="avatar">${initials(conversation.name)}</span><div style="min-width:0"><b>${esc(conversation.name)}</b><p>${esc(conversation.context)}</p></div><small>${esc(conversation.time)}</small></button>`).join("")}</aside>
+  <section class="chat-main"><div class="chat-head"><span class="avatar">${initials(contactName)}</span><div><b>${esc(contactName)}</b><br><small style="color:var(--green)">● Online · ${esc(contactContext)}</small></div><span class="private-chat-badge">Private</span></div>
+  <div class="messages">${messages.length?messages.map(message=>`<div class="bubble ${message.sender===roles[session.role].user?"me":""}">${esc(message.text)}<small>${esc(message.time)}</small></div>`).join(""):`<div class="chat-empty-state"><b>Start the conversation</b><span>Messages here are visible only to ${esc(selectedCandidate.name)} and ${esc(recruiter)}.</span></div>`}</div>
+  <form class="message-compose" id="message-form"><button type="button" class="icon-btn" aria-label="Add attachment">＋</button><input id="message-input" placeholder="Message ${esc(contactName.split(" ")[0])}..." required /><button class="btn btn-primary">Send</button></form></section></div>`;
 }
 
 function offersPage(role) {
@@ -1135,10 +1309,12 @@ function reportsPage() {
   });
   const offered=state.candidates.filter(candidate=>["Offered","Joined"].includes(candidate.stage)).length;
   const joined=state.candidates.filter(candidate=>candidate.stage==="Joined").length;
+  const reportStages=["Sourced","Screened","AI Interview","Client Review","Interview","Offered","Joined"].map(stage=>[stage,stage==="Interview"?state.candidates.filter(candidate=>/L[123] Interview/.test(candidate.stage)).length:state.candidates.filter(candidate=>candidate.stage===stage).length]);
+  const reportStageMax=Math.max(...reportStages.map(stage=>stage[1]),1);
   return `${pageHead("Reports & Analytics","Understand recruiter output, pipeline velocity, offers, and lead conversion.",`<button class="btn btn-secondary" id="export-btn">⇩ Export reports</button>`)}
   ${kpis([["Active jobs",state.jobs.filter(job=>job.status==="Active").length,`${state.jobs.length} total requirements`],["Candidates",state.candidates.length,"Simulation profiles"],["Offer conversion",offered?`${Math.round(joined/offered*100)}%`:"0%",`${joined} joined from ${offered} offers`],["Client SLA",`${Math.round(state.clients.filter(client=>client.status==="Active").length/state.clients.length*100)}%`,"Active client accounts"]])}
   <div class="grid-equal"><div class="card panel"><div class="panel-head"><h3>Recruiter performance</h3><select style="width:130px"><option>June 2026</option></select></div><div class="table-wrap"><table><thead><tr><th>Recruiter</th><th>Submissions</th><th>Interviews</th><th>Joins</th></tr></thead><tbody>${recruiterRows.map(x=>`<tr><td>${person(x[0])}<span class="filter-metadata">June 2026</span></td><td>${x[1]}</td><td>${x[2]}</td><td><b>${x[3]}</b></td></tr>`).join("")}</tbody></table></div></div>
-  <div class="card panel"><div class="panel-head"><h3>Pipeline distribution</h3></div><div class="funnel">${["Sourced","Screened","Client Review","Interview","Offered","Joined"].map(stage=>{const count=stage==="Interview"?state.candidates.filter(candidate=>/Interview/.test(candidate.stage)).length:state.candidates.filter(candidate=>candidate.stage===stage).length;return `<div class="bar-set"><div class="bar" style="height:${Math.max(12,count*6)}%"><b>${count}</b></div><small>${stage}</small></div>`}).join("")}</div></div></div>`;
+  <div class="card panel"><div class="panel-head"><h3>Pipeline distribution</h3></div><div class="funnel">${reportStages.map(([stage,count])=>`<div class="bar-set ${stageClass(stage)}"><div class="bar" style="height:${pipelineBarHeight(count,reportStageMax)}px"><b>${count}</b></div><small>${stage}</small></div>`).join("")}</div></div></div>`;
 }
 
 function settingsPage() {
@@ -1166,6 +1342,7 @@ function experienceEntry(entry={},index=0){
       <div class="field"><label>Designation</label><input data-experience-field="designation" value="${esc(entry.designation||"")}" placeholder="Job title" required></div>
       <div class="field"><label>Start month</label><input data-experience-field="startMonth" type="month" value="${esc(entry.startMonth||"")}" required></div>
       <div class="field"><label>End month</label><input data-experience-field="endMonth" type="month" value="${esc(entry.endMonth||"")}" required></div>
+      <div class="field full"><label>Reason for leaving</label><textarea data-experience-field="reasonForLeaving" placeholder="Why did you leave or why are you leaving this job?" required>${esc(entry.reasonForLeaving||"")}</textarea></div>
     </div>
   </div>`;
 }
@@ -1179,7 +1356,7 @@ function profilePage() {
       <p id="profile-completion-message">${p.completion===100?"Your custom CV is ready.":"Complete your profile to get a custom CV"}</p>
     </div>
     <div class="profile-completion-actions">
-      <div class="progress profile-completion-progress" aria-label="Profile completion"><span id="profile-completion-bar" style="width:${p.completion}%"></span><b id="profile-completion-bar-value">${p.completion}%</b></div>
+      <div class="progress profile-completion-progress" aria-label="Profile completion"><span id="profile-completion-bar" style="width:${p.completion}%"></span><b id="profile-completion-bar-value" style="left:clamp(25px,${p.completion}%,calc(100% - 25px))">${p.completion}%</b></div>
       <button type="button" class="btn btn-primary" id="download-profile-cv" ${p.completion===100?"":"hidden"}>Download Print-Ready CV (PDF)</button>
     </div>
   </div>
@@ -1197,8 +1374,8 @@ function profilePage() {
   </div>
   <div class="section-title">Availability</div>
   ${fields([{label:"Notice period",name:"notice",type:"select",options:["Immediate","15 days","30 days","45 days","60 days","90 days"],value:p.notice}])}
-  <div class="form-grid conditional-field ${p.notice==="Immediate"?"show":""}" id="last-working-day-wrap">
-    <div class="field full"><label>Last working day</label><input name="lastWorkingDay" type="date" value="${esc(p.lastWorkingDay||"")}"><small>Required only when availability is Immediate.</small></div>
+  <div class="form-grid conditional-field ${p.notice==="Immediate"?"show immediate-required":""}" id="last-working-day-wrap">
+    <div class="field full"><label>Last working day <span class="mandatory-badge">Mandatory</span></label><input name="lastWorkingDay" type="date" value="${esc(p.lastWorkingDay||"")}"><small>This field is mandatory when availability is Immediate.</small></div>
   </div>
   <div class="section-title">Education</div>
   <p class="section-help">Add degree, year of passing, and percentage or CGPA.</p>
@@ -1222,7 +1399,7 @@ function profilePage() {
 function applicationsPage() {
   const applications=roleCandidates("Candidate");
   return `${pageHead("My Applications","Follow every stage and see recruiter feedback as it arrives.")}
-  <div class="job-card-grid">${applications.map(application=>{const job=state.jobs.find(item=>item.id===application.jobId);const stageIndex=PIPELINE_STAGES.indexOf(application.stage);const milestones=[0,2,3,7];return `<div class="card job-card" data-filter-type="${application.type}" data-filter-status="${application.stage}" data-filter-owner="${application.recruiter}" data-filter-date="${job?.date||""}"><div style="display:flex;justify-content:space-between">${badge(application.type)}${badge(application.stage)}</div><h3>${application.role}</h3><p>${application.client} · ${job?.location||application.location}</p><div class="timeline" style="margin:15px 0">${["Applied","Review","Interview","Offer"].map((x,n)=>`<div class="stage ${stageIndex>=milestones[n]?"done":stageIndex===milestones[n]-1?"current":""}"><span class="stage-dot">${stageIndex>=milestones[n]?"✓":n+1}</span>${x}</div>`).join("")}</div><button class="btn btn-secondary btn-block view-application" data-id="${application.id}">View application</button></div>`}).join("")}</div>`;
+  <div class="job-card-grid">${applications.map(application=>{const job=state.jobs.find(item=>item.id===application.jobId);const stageIndex=PIPELINE_STAGES.indexOf(application.stage);const milestones=[0,2,3,4,7];return `<div class="card job-card" data-filter-type="${application.type}" data-filter-status="${application.stage}" data-filter-owner="${application.recruiter}" data-filter-date="${job?.date||""}"><div style="display:flex;justify-content:space-between">${badge(application.type)}${badge(application.stage)}</div><h3>${application.role}</h3><p>${application.client} · ${job?.location||application.location}</p><div class="timeline" style="margin:15px 0">${["Applied","AI Interview","Client Review","Interview","Offer"].map((x,n)=>`<div class="stage ${stageClass(x)} ${stageIndex>=milestones[n]?"done":stageIndex===milestones[n]-1?"current":""}"><span class="stage-dot">${stageIndex>=milestones[n]?"✓":n+1}</span>${x}</div>`).join("")}</div><button class="btn btn-secondary btn-block view-application" data-id="${application.id}">View application</button></div>`}).join("")}</div>`;
 }
 
 function documentsPage() {
@@ -1237,22 +1414,36 @@ function bindPage() {
   bindAiSummaryTyping();
   bindTagInputs();
   bindProfileEditors();
+  $("#client-ai-bot-bubble")?.addEventListener("click",()=>{
+    clientAiOpen=!clientAiOpen;
+    $("#client-ai-bot-panel")?.classList.toggle("open",clientAiOpen);
+    $("#client-ai-bot-bubble")?.classList.toggle("active",clientAiOpen);
+    if(clientAiOpen)setTimeout(()=>$("#ai-recruiter-input")?.focus(),50);
+  });
+  $("#client-ai-close")?.addEventListener("click",()=>{
+    clientAiOpen=false;
+    $("#client-ai-bot-panel")?.classList.remove("open");
+    $("#client-ai-bot-bubble")?.classList.remove("active");
+  });
   $("#ai-recruiter-form")?.addEventListener("submit",event=>{
     event.preventDefault();
     const input=$("#ai-recruiter-input");
     const text=input.value.trim();
     if(!text)return;
+    clientAiOpen=true;
     handleAiRecruiterMessage(text);
     save();render();
   });
-  $$("[data-ai-reply]").forEach(button=>button.onclick=()=>{handleAiRecruiterMessage(button.dataset.aiReply);save();render()});
-  $("#ai-generate-job")?.addEventListener("click",()=>{generateAiRecruiterJob();render();toast("Job generated and Admin notified")});
+  $$("[data-ai-reply]").forEach(button=>button.onclick=()=>{clientAiOpen=true;handleAiRecruiterMessage(button.dataset.aiReply);save();render()});
+  $("#ai-generate-job")?.addEventListener("click",()=>{clientAiOpen=true;generateAiRecruiterJob();render();toast("Job generated and Admin notified")});
   $("#ai-edit-jd")?.addEventListener("click",()=>{
+    clientAiOpen=true;
     state.clientAiRecruiter.step="title";
     addAiRecruiterMessage("ai",`No problem. The current title is ${state.clientAiRecruiter.draft.title||"not set"}. What should the job title be?`);
     save();render();
   });
   $("#ai-new-conversation")?.addEventListener("click",()=>{
+    clientAiOpen=true;
     state.clientAiRecruiter={step:"idle",draft:{},messages:[{from:"ai",text:"How may I help you? I can create a job description with you or answer questions about Northstar Systems' hiring activity."}]};
     save();render();
   });
@@ -1274,9 +1465,9 @@ function bindPage() {
     applyPageFilters();
   });
   $("#candidate-stage")?.addEventListener("change",event=>{
-    pageFilterState[currentPage]={...(pageFilterState[currentPage]||{}),status:event.target.value==="All pipeline stages"?"All statuses":event.target.value};
-    if($("#page-filter-status"))$("#page-filter-status").value=pageFilterState[currentPage].status;
-    applyPageFilters();
+    filter=event.target.value==="All pipeline stages"?"All":event.target.value;
+    pageFilterState[currentPage]={...(pageFilterState[currentPage]||{}),status:"All statuses"};
+    render();
   });
   $("#new-job")?.addEventListener("click",()=>showJobForm("Permanent"));
   $$(".choose-job").forEach(x=>x.onclick=()=>showJobForm(x.dataset.type));
@@ -1296,7 +1487,7 @@ function bindPage() {
   $("#upload-cv")?.addEventListener("click",()=>showUpload());
   $$(".view-candidate").forEach(x=>x.onclick=()=>showCandidate(state.candidates.find(c=>c.id===x.dataset.id)));
   $$(".move-candidate").forEach(x=>x.onclick=()=>moveCandidate(x.dataset.id));
-  $$(".message-candidate").forEach(x=>x.onclick=()=>{currentPage="communication";render()});
+  $$(".message-candidate").forEach(x=>x.onclick=()=>{activeConversation=x.dataset.id;currentPage="communication";render()});
   $$(".client-review-status").forEach(select=>select.onchange=()=>{
     const candidate=state.candidates.find(item=>item.id===select.dataset.id);
     if(session.role!=="Client"||currentPage!=="cv-review"||!candidate)return;
@@ -1305,11 +1496,19 @@ function bindPage() {
     addAssignmentNotification({roles:["Recruiter"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.client} marked ${candidate.id} as ${select.value}`});
     save();render();toast(`Client decision updated to ${select.value}`);
   });
+  $$(".last-working-link").forEach(button=>button.onclick=()=>showLeavingReason(button.dataset.id));
   $("#schedule-interview")?.addEventListener("click",showInterviewForm);
   $$(".reschedule-interview").forEach(x=>x.onclick=()=>reschedule(x.dataset.id));
   $$(".feedback-interview").forEach(x=>x.onclick=()=>feedback(x.dataset.id));
   $$(".calendar-event").forEach(x=>x.onclick=()=>feedback(x.dataset.id));
-  $("#message-form")?.addEventListener("submit",e=>{e.preventDefault();const inp=$("#message-input");state.messages.push({from:roles[session.role].user,text:inp.value,time:"Just now",me:true});save();render();toast("Message sent")});
+  $("#message-form")?.addEventListener("submit",e=>{
+    e.preventDefault();
+    const inp=$("#message-input");
+    const candidate=state.candidates.find(item=>item.id===activeConversation);
+    if(!candidate||!inp.value.trim())return;
+    ensureCandidateRecruiterThread(candidate).push({sender:roles[session.role].user,text:inp.value.trim(),time:"Just now"});
+    save();render();toast("Private message sent");
+  });
   $$(".conversation").forEach(button=>button.onclick=()=>{activeConversation=button.dataset.conversation;render()});
   $("#conversation-search")?.addEventListener("input",event=>{
     const query=event.target.value.trim().toLowerCase();
@@ -1367,7 +1566,7 @@ function bindPage() {
     Object.assign(state.profile,updated);
     const candidate=state.candidates.find(item=>item.name===roles.Candidate.user);
     const currentTotal=updated.currentFixed+updated.currentVariable;
-    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,skills:updated.skills,experienceEntries:updated.experienceEntries,educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
+    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,lastWorkingDay:updated.lastWorkingDay,lastWorkingDate:updated.lastWorkingDay||lastWorkingDateFromNotice(updated.notice),reasonForLeaving:updated.experienceEntries[0]?.reasonForLeaving||candidate.reasonForLeaving,skills:updated.skills,experienceEntries:updated.experienceEntries,educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
     const user=state.users.find(item=>item.email===roles.Candidate.email||item.name===roles.Candidate.user);
     if(user)Object.assign(user,{name:updated.name,email:updated.email});
     save();render();toast("Profile updated across all linked workspaces");
@@ -1453,7 +1652,7 @@ function profileCompletionPercent(profile){
   const experience=Array.isArray(profile.experienceEntries)?profile.experienceEntries:[];
   const gap=detectExperienceGaps(experience);
   const educationComplete=education.length>0&&education.every(entry=>["degree","year","percentage"].every(key=>profileFieldComplete(entry[key])));
-  const experienceComplete=experience.length>0&&experience.every(entry=>["company","designation","startMonth","endMonth"].every(key=>profileFieldComplete(entry[key])))&&!gap.invalid.length;
+  const experienceComplete=experience.length>0&&experience.every(entry=>["company","designation","startMonth","endMonth","reasonForLeaving"].every(key=>profileFieldComplete(entry[key])))&&!gap.invalid.length;
   const checks=[
     profileFieldComplete(profile.name),
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(profile.email||"")),
@@ -1495,7 +1694,7 @@ function updateProfileCompletionUI(){
   const download=$("#download-profile-cv");
   if(value)value.textContent=`${completion}%`;
   if(bar)bar.style.width=`${completion}%`;
-  if(barValue)barValue.textContent=`${completion}%`;
+  if(barValue){barValue.textContent=`${completion}%`;barValue.style.left=`clamp(25px,${completion}%,calc(100% - 25px))`}
   if(message)message.textContent=completion===100?"Your custom CV is ready.":"Complete your profile to get a custom CV";
   if(download)download.hidden=completion!==100;
   $("#profile-completion-card")?.classList.toggle("complete",completion===100);
@@ -1505,6 +1704,15 @@ function cvMonth(value){
   if(!/^\d{4}-\d{2}$/.test(value||""))return value||"";
   const [year,month]=value.split("-").map(Number);
   return new Date(year,month-1,1).toLocaleDateString("en-IN",{month:"short",year:"numeric"});
+}
+function latestLeavingReasons(candidate){
+  const entries=(candidate.experienceEntries||[])
+    .map((entry,index)=>({...entry,index,endIndex:monthIndex(entry.endMonth),startIndex:monthIndex(entry.startMonth)}))
+    .filter(entry=>entry.company||entry.designation||entry.reasonForLeaving)
+    .sort((a,b)=>(b.endIndex??b.startIndex??-1)-(a.endIndex??a.startIndex??-1))
+    .slice(0,3);
+  if(entries.length)return entries;
+  return [{company:candidate.client||"Previous employer",designation:candidate.role||"Role not specified",startMonth:"",endMonth:"",reasonForLeaving:candidate.reasonForLeaving||"Reason not shared yet."}];
 }
 function pdfSafeText(value){
   return String(value??"").replace(/[^\x20-\x7E]/g,char=>({
@@ -1682,6 +1890,7 @@ function bindProfileEditors(){
   const updateAvailability=()=>{
     const immediate=notice?.value==="Immediate";
     lastWorkingWrap?.classList.toggle("show",immediate);
+    lastWorkingWrap?.classList.toggle("immediate-required",immediate);
     const input=$('[name="lastWorkingDay"]',form);
     if(input)input.required=immediate;
     updateProfileCompletionUI();
@@ -1725,14 +1934,31 @@ function bindProfileEditors(){
 }
 function bindDashboardDateFilter(){
   if(currentPage!=="dashboard")return;
-  $("#apply-dashboard-date")?.addEventListener("click",()=>{
+  $("#dashboard-date-preset")?.addEventListener("change",event=>{
+    const preset=event.target.value;
+    if(preset==="Custom dates"){
+      pageFilterState[dashboardFilterKey(session.role)]={...(dashboardDateState(session.role)),preset:""};
+      $("#dashboard-date-from")?.focus();
+      return;
+    }
+    if(preset==="All time"){
+      pageFilterState[dashboardFilterKey(session.role)]={};
+      render();toast("Showing all dashboard dates");
+      return;
+    }
+    pageFilterState[dashboardFilterKey(session.role)]=dashboardPresetRange(preset);
+    render();toast(`${preset} dashboard filter applied`);
+  });
+  const applyCustomDashboardDates=()=>{
     const dateFrom=$("#dashboard-date-from")?.value||"";
     const dateTo=$("#dashboard-date-to")?.value||"";
     if(dateFrom&&dateTo&&dateFrom>dateTo){toast("From date must be before To date");return}
-    pageFilterState[dashboardFilterKey(session.role)]={dateFrom,dateTo};
+    pageFilterState[dashboardFilterKey(session.role)]={dateFrom,dateTo,preset:""};
     render();
     toast(dateFrom||dateTo?"Dashboard date filter applied":"Showing all dashboard dates");
-  });
+  };
+  $("#dashboard-date-from")?.addEventListener("change",applyCustomDashboardDates);
+  $("#dashboard-date-to")?.addEventListener("change",applyCustomDashboardDates);
   $("#clear-dashboard-date")?.addEventListener("click",()=>{
     pageFilterState[dashboardFilterKey(session.role)]={};
     render();toast("Dashboard date filter cleared");
@@ -1982,21 +2208,28 @@ function showCandidate(c){
   const visible=revealCandidateIdentity(c);
   const isClientReview=session.role==="Client"&&currentPage==="cv-review";
   const displayName=candidateDisplayName(c);
-  modal(visible?displayName:"Protected candidate profile",`<div class="candidate-resume-head">${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div>${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div></div><div class="resume-highlight-grid"><div><small>Applied role</small><b>${esc(c.role)}</b></div><div><small>Current CTC / rate</small><b>${esc(c.ctc)}</b></div></div>${miniResumeMarkup(c,{visible})}${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select. Resume skills, experience, and education remain available for review.</p>`:""}<div class="timeline">${["Sourced","Screened","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${i<3?"done":i===3?"current":""}"><span class="stage-dot">${i<3?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="resume-pdf-link" id="view-candidate-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
+  modal(visible?displayName:"Protected candidate profile",`<div class="candidate-resume-head">${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div>${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div></div><div class="resume-highlight-grid"><div><small>Applied role</small><b>${esc(c.role)}</b></div><div><small>Current CTC / rate</small><b>${esc(c.ctc)}</b></div></div>${miniResumeMarkup(c,{visible})}${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select. Resume skills, experience, and education remain available for review.</p>`:""}<div class="timeline">${["Sourced","Screened","AI","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${stageClass(x)} ${i<4?"done":i===4?"current":""}"><span class="stage-dot">${i<4?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="resume-pdf-link" id="view-candidate-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
   $(".modal-close-2").onclick=closeModal;
   $("#view-candidate-resume")?.addEventListener("click",()=>viewResumePdf(c,{visible}));
   $("#candidate-advance")?.addEventListener("click",()=>{closeModal();moveCandidate(c.id)});
 }
+function showLeavingReason(id){
+  const candidate=state.candidates.find(item=>item.id===id);
+  if(!candidate)return;
+  const reasons=latestLeavingReasons(candidate);
+  modal(`Leaving reasons · ${candidateDisplayName(candidate)}`,`<div class="grid-equal"><div><small>Last working date</small><h3>${esc(candidateLastWorkingDate(candidate))}</h3></div><div><small>Availability</small><h3>${esc(candidate.notice)}</h3></div></div><h3>Last 3 job-wise reasons for leaving</h3><div class="leaving-reason-list">${reasons.map(entry=>`<article><b>${esc(entry.designation||candidate.role||"Role not specified")}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start not provided"} - ${cvMonth(entry.endMonth)||"Present"}</small><p>${esc(entry.reasonForLeaving||"Reason not shared yet.")}</p></article>`).join("")}</div>`,`<button class="btn btn-secondary modal-close-2">Close</button>`);
+  $(".modal-close-2").onclick=closeModal;
+}
 function showCandidateForm(){
   const availableJobs=roleJobs(session.role==="Candidate"?"Admin":session.role).filter(job=>job.status!=="Closed");
-  modal("Add candidate",`<form id="modal-form">${fields([{label:"Full name",name:"name",placeholder:"Candidate full name"},{label:"Email",name:"email",type:"email",placeholder:"candidate@example.com"},{label:"Mobile number",name:"phone",placeholder:"+91 98765 43210"},{label:"Job",name:"jobId",type:"select",options:availableJobs.map(job=>`${job.id} · ${job.title}`)},{label:"Notice period",name:"notice"},{label:"Location",name:"location",type:"city"},{label:"Skills",name:"skills",type:"tags",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Add candidate</button>`);
+  modal("Add candidate",`<form id="modal-form">${fields([{label:"Full name",name:"name",placeholder:"Candidate full name"},{label:"Email",name:"email",type:"email",placeholder:"candidate@example.com"},{label:"Mobile number",name:"phone",placeholder:"+91 98765 43210"},{label:"Job",name:"jobId",type:"select",options:availableJobs.map(job=>`${job.id} · ${job.title}`)},{label:"Notice period",name:"notice"},{label:"Location",name:"location",type:"city"},{label:"Reason for leaving",name:"reasonForLeaving",type:"textarea",full:true,required:false},{label:"Skills",name:"skills",type:"tags",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Add candidate</button>`);
   bindTagInputs();
   $(".modal-close-2").onclick=closeModal;
   $("#submit-modal").onclick=()=>{
     const f=$("#modal-form");if(!f.reportValidity())return;
     const d=Object.fromEntries(new FormData(f));
     const job=state.jobs.find(item=>d.jobId.startsWith(item.id));
-    const candidate={...d,jobId:job.id,id:nextId("CAN",state.candidates),role:job.title,type:job.type,client:job.client,recruiter:job.recruiter,stage:"Sourced",score:82,ctc:"Not shared"};
+    const candidate={...d,jobId:job.id,id:nextId("CAN",state.candidates),role:job.title,type:job.type,client:job.client,recruiter:job.recruiter,stage:"Sourced",score:82,ctc:"Not shared",lastWorkingDate:lastWorkingDateFromNotice(d.notice),reasonForLeaving:d.reasonForLeaving||"Reason not shared yet."};
     state.candidates.unshift(candidate);
     state.users.push({name:candidate.name,email:candidate.email,role:"Candidate",status:"Active",last:"Never"});
     save();closeModal();render();toast("Candidate added to the shared pipeline");
@@ -2091,7 +2324,7 @@ function importBulkRows(kind,rows){
     } else if(kind==="candidates"){
       const job=state.jobs.find(item=>item.id===data.jobId);
       if(!data.name||!data.email||!job||job.assignmentStatus!=="Assigned"){skipped++;return}
-      const candidate={id:nextId("CAN",state.candidates),name:data.name,email:data.email,phone:data.phone||"",jobId:job.id,role:job.title,type:job.type,client:job.client,recruiter:job.recruiter,stage:"Sourced",score:82,notice:data.notice||"30 days",location:data.location||job.location,skills:data.skills||job.skills,ctc:"Not shared"};
+      const candidate={id:nextId("CAN",state.candidates),name:data.name,email:data.email,phone:data.phone||"",jobId:job.id,role:job.title,type:job.type,client:job.client,recruiter:job.recruiter,stage:"Sourced",score:82,notice:data.notice||"30 days",location:data.location||job.location,skills:data.skills||job.skills,ctc:"Not shared",lastWorkingDate:lastWorkingDateFromNotice(data.notice||"30 days"),reasonForLeaving:data.reasonForLeaving||"Reason not shared yet."};
       state.candidates.unshift(candidate);
       if(!state.users.some(user=>user.email.toLowerCase()===candidate.email.toLowerCase()))state.users.push({name:candidate.name,email:candidate.email,role:"Candidate",status:"Active",last:"Never"});
     } else if(kind==="interviews"){
@@ -2172,14 +2405,14 @@ function showBulkUpload(kind){
     toast(`${result.imported} ${config.label} imported${result.skipped?` · ${result.skipped} skipped`:""} across linked workspaces`);
   };
 }
-function moveCandidate(id){const c=state.candidates.find(c=>c.id===id);modal("Update pipeline stage",`<div class="field"><label>New stage</label><select id="new-stage">${PIPELINE_STAGES.map(s=>`<option ${s===c.stage?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Notes</label><textarea placeholder="Add a note for the team..."></textarea></div>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Update stage</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{c.stage=$("#new-stage").value;save();closeModal();render();toast(`${c.name} moved to ${c.stage}`)}}
+function moveCandidate(id){const c=state.candidates.find(c=>c.id===id);modal("Update pipeline stage",`<div class="field"><label>New stage</label><select id="new-stage">${PIPELINE_STAGES.map(s=>`<option class="${stageClass(s)}" ${s===c.stage?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Notes</label><textarea placeholder="Add a note for the team..."></textarea></div>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Update stage</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{c.stage=$("#new-stage").value;save();closeModal();render();toast(`${c.name} moved to ${c.stage}`)}}
 function showUpload(){modal("Upload CV",`<div class="dropzone" style="padding:50px 20px">⇧<h3>Drop CV files here</h3><p>PDF or DOCX · Up to 10 files</p><button class="btn btn-secondary" id="fake-upload">Browse files</button></div><p style="color:var(--muted);font-size:12px">TALENTBRIDGE will parse contact details, skills, employment history, and flag possible duplicates.</p>`);$("#fake-upload").onclick=()=>{closeModal();toast("CV parsed. Candidate draft created")}}
 function showInterviewForm(){modal("Schedule interview",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Round",name:"round",type:"select",options:INTERVIEW_ROUNDS},{label:"Date",name:"date",type:"date"},{label:"Time",name:"time",type:"time"},{label:"Mode",name:"mode",type:"select",options:["Video","In person","AI Room","Phone"]},{label:"Interviewer",name:"interviewer"}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Schedule & notify</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const c=state.candidates.find(candidate=>d.candidateId.startsWith(candidate.id));const date=new Date(`${d.date}T00:00:00`);const formatted=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});state.interviews.unshift({...d,candidateId:c.id,candidate:c.name,jobId:c.jobId,id:nextId("INT",state.interviews),role:c.role,date:formatted,status:"Pending"});save();closeModal();render();toast("Interview scheduled and visible to all linked users")}}
 function reschedule(id){const interview=state.interviews.find(item=>item.id===id);modal(`Reschedule ${interview.candidate}`,`<form id="modal-form">${fields([{label:"New date",name:"date",type:"date"},{label:"New time",name:"time",type:"time"},{label:"Reason",name:"reason",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Send update</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const form=$("#modal-form");if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form));const date=new Date(`${data.date}T00:00:00`);interview.date=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});interview.time=data.time;interview.status="Pending";interview.rescheduleReason=data.reason;save();closeModal();render();toast("Interview rescheduled across all workspaces")}}
 function nextInterviewStage(candidate,interview){
   const roundTargets={
-    "Recruiter Screen":"Client Review",
-    "AI Technical":"L1 Interview",
+    "Recruiter Screen":"AI Interview",
+    "AI Technical":"Client Review",
     "Client L1":"L2 Interview",
     "L2 – Portfolio":"L3 Interview",
     "L3 – Leadership / Final":"Offered",
@@ -2412,7 +2645,7 @@ function importExternalProfile(id,job,note=""){
   const profile=state.externalTalent.find(item=>item.id===id);
   if(!profile||!job)return;
   if(state.candidates.some(candidate=>candidate.sourceProfileId===profile.id&&candidate.jobId===job.id)){toast("This resume is already associated with the selected job");return}
-  const candidate={id:nextId("CAN",state.candidates),name:profile.name,email:profile.email.startsWith("Available")?"Contact pending":profile.email,phone:profile.phone.startsWith("Available")?"Contact pending":profile.phone,jobId:job?.id||"",role:job?.title||profile.role,type:job?.type||"Permanent",client:job?.client||"Unassigned",recruiter:job?.recruiter||"",stage:"Sourced",score:profile.score,location:profile.location,notice:profile.availability,ctc:"Not shared",skills:profile.skills,summary:profile.summary,experienceEntries:profile.experienceEntries,educationEntries:profile.educationEntries,source:profile.source,sourceProfileId:profile.id};
+  const candidate={id:nextId("CAN",state.candidates),name:profile.name,email:profile.email.startsWith("Available")?"Contact pending":profile.email,phone:profile.phone.startsWith("Available")?"Contact pending":profile.phone,jobId:job?.id||"",role:job?.title||profile.role,type:job?.type||"Permanent",client:job?.client||"Unassigned",recruiter:job?.recruiter||"",stage:"Sourced",score:profile.score,location:profile.location,notice:profile.availability,lastWorkingDate:lastWorkingDateFromNotice(profile.availability),reasonForLeaving:profile.reasonForLeaving||"Imported profile. Reason for leaving to be confirmed during recruiter screening.",ctc:"Not shared",skills:profile.skills,summary:profile.summary,experienceEntries:profile.experienceEntries,educationEntries:profile.educationEntries,source:profile.source,sourceProfileId:profile.id};
   candidate.sourcingNote=note;
   state.candidates.unshift(candidate);
   addAssignmentNotification({roles:["Admin","Recruiter"],recruiter:candidate.recruiter,client:candidate.client,message:`${candidate.name} was sourced from ${profile.source} and associated with ${job.client} · ${job.title}`});
