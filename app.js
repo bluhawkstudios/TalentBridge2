@@ -1,5 +1,7 @@
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+const BRAND_NAME = "G-NEXT";
+const BRAND_SOURCE_NAME = "G-NEXT Database";
 const APP_OPTIONS = {
   departments:["Engineering","Product","Design","Data & Analytics","Quality Assurance","Information Security","Sales","Marketing","Finance","Human Resources","Operations","Customer Success"],
   cities:["Ahmedabad","Bengaluru","Bhopal","Bhubaneswar","Chandigarh","Chennai","Coimbatore","Delhi","Delhi NCR","Gurugram","Hyderabad","Indore","Jaipur","Kochi","Kolkata","Lucknow","Mumbai","Mysuru","Nagpur","Noida","Pune","Surat","Thiruvananthapuram","Vadodara","Visakhapatnam","Remote"],
@@ -49,6 +51,37 @@ const LEAVING_REASONS=[
   "Relocation preference and better work-mode fit.",
   "Compensation and responsibility growth expectations."
 ];
+const PROFILE_EXPERIENCE_DEMO=[
+  {company:"Northstar Design Studio",designation:"Senior Product Designer",startMonth:"2021-04",endMonth:"2026-06",reasonForLeaving:"Seeking a larger product mandate with deeper ownership across research, design systems, and business impact."},
+  {company:"PixelCraft Labs",designation:"Product Designer",startMonth:"2018-07",endMonth:"2021-03",reasonForLeaving:"Moved to a senior role with broader stakeholder exposure and platform-level design responsibilities."},
+  {company:"BluePeak Digital",designation:"UX Designer",startMonth:"2016-06",endMonth:"2018-06",reasonForLeaving:"Wanted to transition from execution-focused UX work into end-to-end product design."}
+];
+const DEMO_COMPANIES=["Accenture","Infosys","TCS","Wipro","Cognizant","Capgemini","HCLTech","Tech Mahindra","Zoho","Freshworks","Mindtree","Publicis Sapient"];
+const DEMO_DESIGNATIONS=["Associate","Executive","Analyst","Consultant","Specialist","Senior Specialist","Lead"];
+function demoExperienceFor(candidate,index){
+  if(candidate?.name==="Rohan Kapoor"||candidate?.email===state?.profile?.email)return PROFILE_EXPERIENCE_DEMO;
+  const role=candidate?.role||"Professional";
+  const previousRole=role.includes("Manager")?"Team Lead":role.includes("Designer")?"UX Designer":role.includes("Engineer")?"Software Engineer":role.includes("Analyst")?"Business Analyst":DEMO_DESIGNATIONS[index%DEMO_DESIGNATIONS.length];
+  return [
+    {company:candidate?.client||DEMO_COMPANIES[index%DEMO_COMPANIES.length],designation:role,startMonth:`${2021+(index%2)}-0${1+(index%6)}`,endMonth:"2026-06",reasonForLeaving:LEAVING_REASONS[index%LEAVING_REASONS.length]},
+    {company:DEMO_COMPANIES[(index+3)%DEMO_COMPANIES.length],designation:previousRole,startMonth:`${2018+(index%2)}-0${1+((index+2)%6)}`,endMonth:`2021-0${1+((index+3)%6)}`,reasonForLeaving:LEAVING_REASONS[(index+1)%LEAVING_REASONS.length]},
+    {company:DEMO_COMPANIES[(index+6)%DEMO_COMPANIES.length],designation:DEMO_DESIGNATIONS[index%DEMO_DESIGNATIONS.length],startMonth:`2015-0${1+((index+4)%6)}`,endMonth:`2018-0${1+((index+5)%6)}`,reasonForLeaving:LEAVING_REASONS[(index+2)%LEAVING_REASONS.length]}
+  ];
+}
+const EDUCATION_LEVELS=["Graduation","HSC","SSC"];
+function normalizeEducationEntries(entries=[]){
+  const source=Array.isArray(entries)?entries:[];
+  const byLevel=new Map(source.map(entry=>[entry.level,entry]));
+  return EDUCATION_LEVELS.map((level,index)=>{
+    const entry=byLevel.get(level)||source[index]||{};
+    return {
+      level,
+      degree:entry.degree||"",
+      year:entry.year||"",
+      university:entry.university||entry.institute||""
+    };
+  });
+}
 const PIPELINE_STAGES=["Sourced","Screened","AI Interview","Client Review","L1 Interview","L2 Interview","L3 Interview","Offered","Joined"];
 const INTERVIEW_ROUNDS=["Recruiter Screen","AI Technical","Client L1","L2 – Portfolio","L3 – Leadership / Final","HR Round"];
 const STAGE_ALIASES={Applied:"Sourced",AI:"AI Interview",Client:"Client Review",Interview:"L1 Interview",Offer:"Offered"};
@@ -68,19 +101,19 @@ const pipelineDestination = role => role==="Client"?"cv-review":role==="Recruite
 
 const roles = {
   Client: {
-    user: "Ananya Sharma", company: "Northstar Systems", email: "client@talentos.ai",
+    user: "Ananya Sharma", company: "Northstar Systems", email: "client@gnext.ai",
     nav: [["dashboard","Dashboard","⌂"],["job-type","Post a Job","＋"],["jobs","My Job Listings","▤"],["cv-review","CV Review","◫"],["interviews","Interviews","◷"],["offers","Offers & Contracts","◇"],["documents","Documents","▱"]]
   },
   Admin: {
-    user: "Arjun Mehta", company: "TalentOS Admin", email: "admin@talentos.ai",
+    user: "Arjun Mehta", company: "G-NEXT Admin", email: "admin@gnext.ai",
     nav: [["dashboard","Dashboard","⌂"],["users","User Management","♙"],["clients","Client Management","▦"],["jobs","Job Management","▤"],["candidates","Candidates & Contractors","♧"],["interviews","Interviews","◷"],["ai-sourcing","AI Sourcing","✦"],["integrations","Integrations","⚡"],["leads","Lead Generation","⌁"],["reports","Reports & Analytics","▥"],["settings","Settings","⚙"]]
   },
   Recruiter: {
-    user: "Priya Nair", company: "TalentOS Recruitment", email: "recruiter@talentos.ai",
+    user: "Priya Nair", company: "G-NEXT Recruitment", email: "recruiter@gnext.ai",
     nav: [["dashboard","Dashboard","⌂"],["jobs","My Assigned Jobs","▤"],["sourcing","Candidate Sourcing","✦"],["ai-sourcing","AI Sourcing","✦"],["interviews","Interview Scheduling","◷"],["communication","Communication Hub","✉"],["ai-interview","AI Technical Interview","◎"]]
   },
   Candidate: {
-    user: "Rohan Kapoor", company: "Candidate Portal", email: "candidate@talentos.ai",
+    user: "Rohan Kapoor", company: "Candidate Portal", email: "candidate@gnext.ai",
     nav: [["dashboard","Dashboard","⌂"],["profile","My Profile","♙"],["applications","My Applications","▤"],["interviews","Interviews & Assessments","◷"],["communication","Communication","✉"],["offers","Offer & Joining","◇"]]
   }
 };
@@ -101,15 +134,15 @@ const seed = {
   ],
   interviews: [
     {id:"INT-502",candidate:"Rohan Kapoor",role:"Senior Product Designer",round:"L2 – Portfolio",date:"15 Jun 2026",time:"11:00 AM",mode:"Video",interviewer:"Neha Gupta",status:"Confirmed"},
-    {id:"INT-499",candidate:"Vikram Singh",role:"React Developer",round:"AI Technical",date:"14 Jun 2026",time:"3:30 PM",mode:"AI Room",interviewer:"TalentOS AI",status:"Confirmed"},
+    {id:"INT-499",candidate:"Vikram Singh",role:"React Developer",round:"AI Technical",date:"14 Jun 2026",time:"3:30 PM",mode:"AI Room",interviewer:"G-NEXT AI",status:"Confirmed"},
     {id:"INT-495",candidate:"Meera Iyer",role:"Data Engineer",round:"Client L1",date:"16 Jun 2026",time:"2:00 PM",mode:"Video",interviewer:"Rakesh Menon",status:"Pending"}
   ],
   users: [
-    {name:"Ananya Sharma",email:"client@talentos.ai",role:"Client",status:"Active",last:"Today, 9:42 AM"},
-    {name:"Arjun Mehta",email:"admin@talentos.ai",role:"Admin",status:"Active",last:"Today, 10:15 AM"},
-    {name:"Priya Nair",email:"recruiter@talentos.ai",role:"Recruiter",status:"Active",last:"Today, 10:02 AM"},
-    {name:"Rohan Kapoor",email:"candidate@talentos.ai",role:"Candidate",status:"Active",last:"Yesterday, 8:36 PM"},
-    {name:"Karan Shah",email:"karan@talentos.ai",role:"Recruiter",status:"Active",last:"Today, 8:50 AM"}
+    {name:"Ananya Sharma",email:"client@gnext.ai",role:"Client",status:"Active",last:"Today, 9:42 AM"},
+    {name:"Arjun Mehta",email:"admin@gnext.ai",role:"Admin",status:"Active",last:"Today, 10:15 AM"},
+    {name:"Priya Nair",email:"recruiter@gnext.ai",role:"Recruiter",status:"Active",last:"Today, 10:02 AM"},
+    {name:"Rohan Kapoor",email:"candidate@gnext.ai",role:"Candidate",status:"Active",last:"Yesterday, 8:36 PM"},
+    {name:"Karan Shah",email:"karan@gnext.ai",role:"Recruiter",status:"Active",last:"Today, 8:50 AM"}
   ],
   leads: [
     {company:"Zephyr Commerce",contact:"Nitin Jain",source:"LinkedIn",stage:"Qualified",value:"₹6.5L",owner:"Arjun Mehta"},
@@ -128,7 +161,7 @@ const seed = {
     currentFixed:22,currentVariable:2,expectedCtc:30,notice:"30 days",lastWorkingDay:"",
     skills:"Figma, UX Research, Product Strategy, Prototyping",
     educationEntries:[{degree:"B.Des",year:"2018",percentage:"82"}],
-    experienceEntries:[{company:"Northstar Design Studio",designation:"Senior Product Designer",startMonth:"2018-07",endMonth:"2026-06"}],
+    experienceEntries:PROFILE_EXPERIENCE_DEMO,
     experienceGapReason:"",completion:86
   }
 };
@@ -204,7 +237,7 @@ function buildSimulationData() {
   });
   const interviewCandidates=candidates.filter((candidate,index)=>index===0||["AI Interview","L1 Interview","L2 Interview","L3 Interview","Offered","Joined"].includes(candidate.stage)).slice(0,64);
   const rounds=INTERVIEW_ROUNDS;
-  const interviewers=["Neha Gupta","Rakesh Menon","TalentBridge AI","Ananya Sharma","Vivek Suri"];
+  const interviewers=["Neha Gupta","Rakesh Menon","G-NEXT AI","Ananya Sharma","Vivek Suri"];
   const interviews=interviewCandidates.map((candidate,index)=>{
     const day=index===0?15:1+(index%28);
     const completed=day<13 || candidate.stage==="Joined";
@@ -224,9 +257,9 @@ function buildSimulationData() {
   });
   const candidateUsers=candidates.slice(0,81).map(candidate=>({name:candidate.name,email:candidate.email,role:"Candidate",status:"Active",last:`${1+(Number(candidate.id.slice(-2))%12)} hr ago`}));
   const users=[
-    {name:"Arjun Mehta",email:"admin@talentos.ai",role:"Admin",status:"Active",last:"Today, 10:15 AM"},
+    {name:"Arjun Mehta",email:"admin@gnext.ai",role:"Admin",status:"Active",last:"Today, 10:15 AM"},
     ...clients.map(client=>({name:client.contact,email:client.email,role:"Client",status:client.status==="Active"?"Active":"Inactive",last:"Today"})),
-    ...recruiters.map((name,index)=>({name,email:index===0?"recruiter@talentos.ai":`${name.toLowerCase().replaceAll(" ",".")}@talentos.ai`,role:"Recruiter",status:"Active",last:"Today"})),
+    ...recruiters.map((name,index)=>({name,email:index===0?"recruiter@gnext.ai":`${name.toLowerCase().replaceAll(" ",".")}@gnext.ai`,role:"Recruiter",status:"Active",last:"Today"})),
     ...candidateUsers
   ].slice(0,100);
   const leadStages=["New","Qualified","Proposal","Negotiation"];
@@ -277,8 +310,9 @@ state.profile.city ||= [...APP_OPTIONS.cities].sort((a,b)=>b.length-a.length).fi
 state.profile.state ||= profileStateForCity(state.profile.city)||"";
 state.profile.locality ||= "";
 state.profile.location=[state.profile.locality,state.profile.city,state.profile.state].filter(Boolean).join(", ");
-state.profile.educationEntries=Array.isArray(state.profile.educationEntries)&&state.profile.educationEntries.length?state.profile.educationEntries:[{degree:state.profile.education?.split(",")[0]||"",year:"",percentage:""}];
+state.profile.educationEntries=normalizeEducationEntries(Array.isArray(state.profile.educationEntries)&&state.profile.educationEntries.length?state.profile.educationEntries:[{degree:state.profile.education?.split(",")[0]||"",year:"",university:""}]);
 state.profile.experienceEntries=Array.isArray(state.profile.experienceEntries)&&state.profile.experienceEntries.length?state.profile.experienceEntries:[{company:"",designation:state.profile.experience||"",startMonth:"",endMonth:""}];
+if(state.profile.name==="Rohan Kapoor"&&state.profile.experienceEntries.length<3)state.profile.experienceEntries=PROFILE_EXPERIENCE_DEMO;
 state.profile.experienceEntries=state.profile.experienceEntries.map(entry=>{
   const designation=String(entry.designation||"").trim();
   const durationOnly=/^\d+(?:\.\d+)?\s*(?:years?|yrs?|months?|mos?)$/i.test(designation);
@@ -307,7 +341,7 @@ state.externalTalent=state.externalTalent.map((profile,index)=>({
     {company:profile.currentCompany,designation:profile.role,startMonth:`${2018+(index%4)}-01`,endMonth:"2026-06",reasonForLeaving:LEAVING_REASONS[index%LEAVING_REASONS.length]},
     {company:["Tech Mahindra","Cognizant","Capgemini","HCLTech"][index%4],designation:index%2?"Consultant":"Specialist",startMonth:`${2014+(index%3)}-06`,endMonth:`${2017+(index%4)}-12`,reasonForLeaving:LEAVING_REASONS[(index+1)%LEAVING_REASONS.length]}
   ],
-  educationEntries:profile.educationEntries||[{degree:profile.education,institute:["IIT Delhi","Pune University","Anna University","Mumbai University"][index%4],year:String(2012+(index%8)),percentage:`${72+(index%18)}%`}]
+  educationEntries:normalizeEducationEntries(profile.educationEntries||[{degree:profile.education,institute:["IIT Delhi","Pune University","Anna University","Mumbai University"][index%4],year:String(2012+(index%8))}])
 }));
 state.candidates=state.candidates.map((candidate,index)=>{
   const isProfileCandidate=candidate.name===state.profile.name||candidate.email===state.profile.email;
@@ -320,10 +354,14 @@ state.candidates=state.candidates.map((candidate,index)=>{
     lastWorkingDate:profileLastWorkingDate||(/immediate/i.test(storedLastWorkingDate)?"":storedLastWorkingDate)||candidate.lastWorkingDay||lastWorkingDateFromNotice(candidate.notice),
     reasonForLeaving:candidate.reasonForLeaving||LEAVING_REASONS[index%LEAVING_REASONS.length],
     summary:candidate.summary||(isProfileCandidate?`${state.profile.experienceEntries?.[0]?.designation||candidate.role} experienced in ${state.profile.skills}.`:sourcedProfile?.summary||`${candidate.role} with experience in ${candidate.skills}, currently available in ${candidate.location}.`),
-    experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||[{company:candidate.client||"Previous employer",designation:candidate.role,startMonth:`${2018+(index%5)}-01`,endMonth:"2026-06",reasonForLeaving:LEAVING_REASONS[index%LEAVING_REASONS.length]}]),
-    educationEntries:candidate.educationEntries||(isProfileCandidate?state.profile.educationEntries:sourcedProfile?.educationEntries||[{degree:["B.Tech","MBA","M.Sc","B.Des"][index%4],institute:["State University","National Institute of Technology","Business School","Design Institute"][index%4],year:String(2014+(index%9)),percentage:`${70+(index%20)}%`}])
+    experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||demoExperienceFor(candidate,index)),
+    educationEntries:normalizeEducationEntries(candidate.educationEntries||(isProfileCandidate?state.profile.educationEntries:sourcedProfile?.educationEntries||[{degree:["B.Tech","MBA","M.Sc","B.Des"][index%4],institute:["State University","National Institute of Technology","Business School","Design Institute"][index%4],year:String(2014+(index%9))}]))
   };
 });
+state.candidates=state.candidates.map((candidate,index)=>({
+  ...candidate,
+  experienceEntries:(candidate.experienceEntries&&candidate.experienceEntries.length>=3)?candidate.experienceEntries:demoExperienceFor(candidate,index),
+}));
 state.candidates=state.candidates.map((candidate,index)=>({
   ...candidate,
   experienceEntries:(candidate.experienceEntries||[]).map((entry,entryIndex)=>({
@@ -339,12 +377,14 @@ const talentBridgeProfiles=state.candidates.map((candidate,index)=>({
   id:`TBD-${candidate.id}`,candidateId:candidate.id,name:candidate.name,role:candidate.role,skills:candidate.skills,
   location:candidate.location,score:candidate.score,experience:Math.max(1,candidate.experienceEntries?.length?candidate.experienceEntries.length*3:2+(index%10)),
   availability:candidate.notice,currentCompany:candidate.experienceEntries?.[0]?.company||candidate.client||"Not provided",
-  education:candidate.educationEntries?.[0]?.degree||"Not provided",source:"TalentBridge Database",
+  education:candidate.educationEntries?.[0]?.degree||"Not provided",source:BRAND_SOURCE_NAME,
   email:candidate.email,phone:candidate.phone,summary:candidate.summary,
   experienceEntries:candidate.experienceEntries,educationEntries:candidate.educationEntries
 }));
 state.externalTalent=[
-  ...state.externalTalent.filter(profile=>profile.source!=="TalentBridge Database"),
+  ...state.externalTalent
+    .map(profile=>({...profile,source:profile.source==="TalentBridge Database"?BRAND_SOURCE_NAME:profile.source}))
+    .filter(profile=>profile.source!==BRAND_SOURCE_NAME),
   ...talentBridgeProfiles
 ];
 state.aiSourcingResults ||= state.externalTalent.filter(profile=>state.integrations.some(item=>item.name===profile.source&&item.connected&&item.enabled)).slice(0,20).map(profile=>profile.id);
@@ -372,7 +412,7 @@ let filter = "All";
 let teamChatOpen = false;
 let activeRecruiter = "Priya Nair";
 let clientAiOpen = false;
-let theme = localStorage.getItem("talentbridge-theme") || "light";
+let theme = localStorage.getItem("gnext-theme") || localStorage.getItem("talentbridge-theme") || "light";
 let interviewView = "Upcoming";
 let interviewCalendarDate = new Date(2026,5,1);
 let aiSourcingView = "Grid";
@@ -591,7 +631,7 @@ function render() {
   $("#app").innerHTML = `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="brand"><span class="brand-mark">T</span>TALENTBRIDGE</div>
+        <div class="brand"><span class="brand-mark">G</span>${BRAND_NAME}</div>
         <div class="role-pill"><span>${session.role} workspace</span><span>⌄</span></div>
         <div class="nav-label">Workspace</div>
         <nav class="nav">${role.nav.map(([id,label,icon]) => `<button class="nav-item ${currentPage===id?"active":""}" data-page="${id}"><span class="nav-icon">${icon}</span>${label}</button>`).join("")}</nav>
@@ -599,7 +639,7 @@ function render() {
       </aside>
       <main class="main">
         <header class="topbar">
-          <div style="display:flex;align-items:center;gap:12px"><button class="icon-btn mobile-menu">☰</button><div class="crumb">TALENTBRIDGE / <b>${titleFor(currentPage)}</b></div></div>
+          <div style="display:flex;align-items:center;gap:12px"><button class="icon-btn mobile-menu">☰</button><div class="crumb">${BRAND_NAME} / <b>${titleFor(currentPage)}</b></div></div>
           <div class="top-actions"><div class="search"><span>⌕</span><input id="global-search" placeholder="Search jobs, candidates..." /></div>
             <button class="icon-btn theme-toggle" id="theme-toggle" aria-label="Switch to ${theme==="light"?"dark":"light"} mode" title="${theme==="light"?"Dark":"Light"} mode">
               <svg class="theme-icon theme-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"></circle><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path></svg>
@@ -622,15 +662,15 @@ function renderLogin() {
   $("#app").innerHTML = `
   <div class="login-page">
     <section class="login-art">
-      <div class="brand"><span class="brand-mark">T</span>TALENTBRIDGE</div>
+      <div class="brand"><span class="brand-mark">G</span>${BRAND_NAME}</div>
       <div class="hero-copy"><h1>Recruitment,<br>orchestrated.</h1><p>One intelligent operating system for every person in the hiring journey, from first brief to first day.</p><div class="signal-row"><span class="signal">✦ AI matching</span><span class="signal">◎ Live pipelines</span><span class="signal">◷ Faster hiring</span></div></div>
-      <div class="login-foot">TALENTBRIDGE · AI Recruitment Operating System</div>
+      <div class="login-foot">${BRAND_NAME} · AI Recruitment Operating System</div>
     </section>
     <section class="login-panel">
       <h2>Welcome back</h2><p>Choose a workspace to explore the complete platform.</p>
       <div class="role-grid">${Object.entries(roles).map(([r,v]) => `<button class="role-card ${r===selected?"active":""}" data-role="${r}"><b>${r}</b><small>${r==="Client"?"Post jobs and review talent":r==="Admin"?"Manage the complete operation":r==="Recruiter"?"Source and move candidates":"Track your hiring journey"}</small></button>`).join("")}</div>
       <div class="field"><label>Email address</label><input id="login-email" value="${roles[selected].email}" /></div>
-      <div class="field"><label>Password</label><input type="password" value="talentos2026" /></div>
+      <div class="field"><label>Password</label><input type="password" value="gnext2026" /></div>
       <button class="btn btn-primary btn-block" id="login-btn">Enter ${selected} workspace →</button>
       <div class="login-hint">Demo access is pre-filled. Select any role to sign in.</div>
     </section>
@@ -650,7 +690,7 @@ function bindShell() {
   $("#theme-toggle")?.addEventListener("click", () => {
     theme = theme === "light" ? "dark" : "light";
     document.documentElement.dataset.theme = theme;
-    localStorage.setItem("talentbridge-theme", theme);
+    localStorage.setItem("gnext-theme", theme);
     const toggle = $("#theme-toggle");
     toggle.setAttribute("aria-label", `Switch to ${theme === "light" ? "dark" : "light"} mode`);
     toggle.title = `${theme === "light" ? "Dark" : "Light"} mode`;
@@ -1317,7 +1357,7 @@ function aiSourcingPage() {
       <div class="field"><label>Current company</label><input name="company" placeholder="e.g. Infosys"></div>
       <div class="field"><label>Education</label><select name="education"><option value="">Any qualification</option>${["B.Tech","M.Tech","MBA","B.Sc","B.Des"].map(value=>`<option>${value}</option>`).join("")}</select></div>
     </div>
-    <div class="source-provider-filter"><div class="source-provider-title"><b>Search Sources</b><small>Select one or more databases for profiles matching ${isAdmin?"active requirements":"your assigned jobs"}.</small></div><div><label class="source-check"><input type="checkbox" name="sources" value="TalentBridge Database" checked><span>TalentBridge Database</span><small>Available · Internal profiles</small></label>${state.integrations.filter(item=>item.id!=="custom").map(item=>`<label class="source-check ${item.connected&&item.enabled?"":"disabled"}"><input type="checkbox" name="sources" value="${item.name}" ${item.connected&&item.enabled?"checked":"disabled"}><span>${item.name}</span><small>${item.connected&&item.enabled?"Available":isAdmin?"Connect in Integrations":"Unavailable · Admin managed"}</small></label>`).join("")}</div></div>
+    <div class="source-provider-filter"><div class="source-provider-title"><b>Search Sources</b><small>Select one or more databases for profiles matching ${isAdmin?"active requirements":"your assigned jobs"}.</small></div><div><label class="source-check"><input type="checkbox" name="sources" value="${BRAND_SOURCE_NAME}" checked><span>${BRAND_SOURCE_NAME}</span><small>Available · Internal profiles</small></label>${state.integrations.filter(item=>item.id!=="custom").map(item=>`<label class="source-check ${item.connected&&item.enabled?"":"disabled"}"><input type="checkbox" name="sources" value="${item.name}" ${item.connected&&item.enabled?"checked":"disabled"}><span>${item.name}</span><small>${item.connected&&item.enabled?"Available":isAdmin?"Connect in Integrations":"Unavailable · Admin managed"}</small></label>`).join("")}</div></div>
     <div class="ai-search-actions"><label class="check"><input type="checkbox" name="verifiedOnly"> Verified contact details only</label><button type="submit" class="btn btn-primary">✦ Run AI sourcing</button></div>
   </form>
   <div class="card panel ai-results-panel"><div class="panel-head"><div><h3>AI matched profiles</h3><p>${results.length} results ranked by relevance across ${connected.length} connected sources.</p></div><div class="ai-result-head-actions">${state.sourcingSearches.length?`<small>Last search: ${state.sourcingSearches[0].time}</small>`:""}<div class="view-switch"><button class="${aiSourcingView==="Grid"?"active":""}" data-ai-view="Grid">Grid</button><button class="${aiSourcingView==="List"?"active":""}" data-ai-view="List">List</button></div></div></div>
@@ -1360,18 +1400,19 @@ function reportsPage() {
 
 function settingsPage() {
   return `${pageHead("Settings","Configure your organization, communication, workflow masters, and audit rules.",`<button class="btn btn-primary" id="save-settings">Save changes</button>`)}
-  <div class="grid-2"><div class="card form-card"><div class="section-title">Company profile</div><div class="form-grid"><div class="field"><label>Company name</label><input value="TalentOS Recruitment Pvt Ltd"></div><div class="field"><label>Support email</label><input value="support@talentos.ai"></div><div class="field"><label>Default currency</label><select><option>INR</option><option>USD</option></select></div><div class="field"><label>Timezone</label><select><option>Asia/Kolkata</option></select></div></div>
+  <div class="grid-2"><div class="card form-card"><div class="section-title">Company profile</div><div class="form-grid"><div class="field"><label>Company name</label><input value="G-NEXT Recruitment Pvt Ltd"></div><div class="field"><label>Support email</label><input value="support@gnext.ai"></div><div class="field"><label>Default currency</label><select><option>INR</option><option>USD</option></select></div><div class="field"><label>Timezone</label><select><option>Asia/Kolkata</option></select></div></div>
   <div class="section-title">Communication</div>${["Email notifications","SMS interview reminders","WhatsApp status updates","Weekly executive report"].map((x,i)=>`<label class="check" style="margin:13px 0"><input type="checkbox" ${i<3?"checked":""}> ${x}</label>`).join("")}</div>
   <div class="card panel"><div class="panel-head"><h3>Workflow masters</h3></div>${["Pipeline stages","Rejection reasons","Engagement types","Interview rounds","Document categories"].map(x=>`<div style="display:flex;justify-content:space-between;padding:13px 0;border-bottom:1px solid var(--line)"><b>${x}</b><button class="mini-btn edit-master" data-name="${x}">Configure</button></div>`).join("")}</div></div>`;
 }
 
 function educationEntry(entry={},index=0){
+  const level=entry.level||EDUCATION_LEVELS[index]||`Education ${index+1}`;
   return `<div class="profile-entry education-entry" data-entry-index="${index}">
-    <div class="profile-entry-head"><b>Qualification ${index+1}</b><button type="button" class="mini-btn remove-education" aria-label="Remove qualification">Remove</button></div>
-    <div class="form-grid">
+    <div class="profile-entry-head"><b>${level}</b><input type="hidden" data-education-field="level" value="${esc(level)}"></div>
+    <div class="form-grid education-row-grid">
       <div class="field"><label>Degree</label><input data-education-field="degree" value="${esc(entry.degree||"")}" placeholder="e.g. B.Tech, MBA" required></div>
       <div class="field"><label>Year of passing</label><input data-education-field="year" type="number" min="1950" max="2035" value="${esc(entry.year||"")}" placeholder="e.g. 2020" required></div>
-      <div class="field full"><label>Percentage / CGPA</label><input data-education-field="percentage" value="${esc(entry.percentage||"")}" placeholder="e.g. 82% or 8.4 CGPA" required></div>
+      <div class="field"><label>University</label><input data-education-field="university" value="${esc(entry.university||entry.institute||"")}" placeholder="University / Board" required></div>
     </div>
   </div>`;
 }
@@ -1419,9 +1460,8 @@ function profilePage() {
     <div class="field full"><label>Last working day <span class="mandatory-badge">Mandatory</span></label><input name="lastWorkingDay" type="date" value="${esc(p.lastWorkingDay||"")}"><small>This field is mandatory when availability is Immediate.</small></div>
   </div>
   <div class="section-title">Education</div>
-  <p class="section-help">Add degree, year of passing, and percentage or CGPA.</p>
-  <div class="profile-entry-list" id="education-list">${p.educationEntries.map(educationEntry).join("")}</div>
-  <button type="button" class="btn btn-secondary add-profile-entry" id="add-education">＋ Add education</button>
+  <p class="section-help">Enter Graduation, HSC, and SSC details in a compact format.</p>
+  <div class="profile-entry-list compact-education-list" id="education-list">${normalizeEducationEntries(p.educationEntries).map(educationEntry).join("")}</div>
   <div class="section-title">Experience</div>
   <p class="section-help">Add company, designation, start month, and end month. Employment gaps are detected automatically.</p>
   <div class="profile-entry-list" id="experience-list">${p.experienceEntries.map(experienceEntry).join("")}</div>
@@ -1589,15 +1629,15 @@ function bindPage() {
   $("#new-lead")?.addEventListener("click",showLeadForm);
   $("#upload-document")?.addEventListener("click",showDocumentForm);
   $$(".move-lead").forEach(x=>x.onclick=()=>{const l=state.leads.find(a=>a.company===x.dataset.company);const stages=["New","Qualified","Proposal","Negotiation"];l.stage=stages[(stages.indexOf(l.stage)+1)%stages.length];save();render();toast(`Lead moved to ${l.stage}`)});
-  $("#export-btn")?.addEventListener("click",()=>downloadCsv("talentos-export.csv",[["Job ID","Title","Type","Client","Status"],...state.jobs.map(j=>[j.id,j.title,j.type,j.client,j.status])]));
+  $("#export-btn")?.addEventListener("click",()=>downloadCsv("gnext-export.csv",[["Job ID","Title","Type","Client","Status"],...state.jobs.map(j=>[j.id,j.title,j.type,j.client,j.status])]));
   $("#save-settings")?.addEventListener("click",()=>toast("Settings saved"));
   $$(".edit-master").forEach(x=>x.onclick=()=>genericForm(`Configure ${x.dataset.name}`,["Item 1","Item 2","Item 3"],"Workflow master updated"));
   $("#save-profile")?.addEventListener("click",()=>{
     const form=$("#profile-form");if(!form.reportValidity())return;
     const updated=Object.fromEntries(new FormData(form));
-    const educationEntries=collectProfileEntries("education");
+    const educationEntries=normalizeEducationEntries(collectProfileEntries("education"));
     const experienceEntries=collectProfileEntries("experience");
-    if(!educationEntries.length){toast("Add at least one education entry");return}
+    if(educationEntries.some(entry=>["degree","year","university"].some(key=>!profileFieldComplete(entry[key])))){toast("Complete Graduation, HSC, and SSC education details");return}
     if(!experienceEntries.length){toast("Add at least one experience entry");return}
     const gap=detectExperienceGaps(experienceEntries);
     if(gap.invalid.length){toast("Correct employment dates where the end month is before the start month");return}
@@ -1703,7 +1743,7 @@ function profileCompletionPercent(profile){
   const education=Array.isArray(profile.educationEntries)?profile.educationEntries:[];
   const experience=Array.isArray(profile.experienceEntries)?profile.experienceEntries:[];
   const gap=detectExperienceGaps(experience);
-  const educationComplete=education.length>0&&education.every(entry=>["degree","year","percentage"].every(key=>profileFieldComplete(entry[key])));
+  const educationComplete=education.length===EDUCATION_LEVELS.length&&education.every(entry=>["degree","year","university"].every(key=>profileFieldComplete(entry[key])));
   const experienceComplete=experience.length>0&&experience.every(entry=>["company","designation","startMonth","endMonth","reasonForLeaving"].every(key=>profileFieldComplete(entry[key])))&&!gap.invalid.length;
   const checks=[
     profileFieldComplete(profile.name),
@@ -1729,7 +1769,7 @@ function profileFormSnapshot(){
   if(!form)return state.profile;
   const data=Object.fromEntries(new FormData(form));
   data.location=[data.locality,data.city,data.state].filter(Boolean).join(", ");
-  data.educationEntries=collectProfileEntries("education");
+  data.educationEntries=normalizeEducationEntries(collectProfileEntries("education"));
   data.experienceEntries=collectProfileEntries("experience");
   data.lastWorkingDay=data.notice==="Immediate"?(data.lastWorkingDay||""):"";
   const gap=detectExperienceGaps(data.experienceEntries);
@@ -1812,7 +1852,7 @@ function buildProfilePdf(profile){
   });
   if(profile.experienceGapReason)line(`Employment gap note: ${profile.experienceGapReason}`,{size:9,spaceAfter:3});
   heading("Education");
-  (profile.educationEntries||[]).forEach(entry=>line([entry.degree,entry.institute,entry.year,entry.percentage].filter(Boolean).join(" | "),{bold:true,spaceAfter:3}));
+  (normalizeEducationEntries(profile.educationEntries)||[]).forEach(entry=>line([entry.level,entry.degree,entry.year,entry.university].filter(Boolean).join(" | "),{bold:true,spaceAfter:3}));
   if(profile.currentFixed!==undefined||profile.ctc||profile.expectedCtc!==undefined){
     heading("Compensation");
     if(profile.currentFixed!==undefined)line(`Current CTC: Fixed INR ${profile.currentFixed} LPA | Variable INR ${profile.currentVariable||0} LPA`);
@@ -1822,7 +1862,7 @@ function buildProfilePdf(profile){
   heading("Availability");
   line(`Notice period: ${profile.notice||profile.availability||"Not provided"}${profile.notice==="Immediate"&&profile.lastWorkingDay?` | Last working day: ${profile.lastWorkingDay}`:""}`);
   y-=12;rule();
-  line("Generated from TALENTBRIDGE Candidate Profile",{size:8,leading:12});
+  line(`Generated from ${BRAND_NAME} Candidate Profile`,{size:8,leading:12});
   newPage();
 
   const objects=[null,
@@ -1851,7 +1891,7 @@ function buildProfilePdf(profile){
 function downloadProfileCv(profile){
   const blob=buildProfilePdf(profile);
   const link=document.createElement("a");
-  const filename=`${String(profile.name||"candidate").trim().replace(/[^a-z0-9]+/gi,"-").replace(/^-|-$/g,"")}-TALENTBRIDGE-CV.pdf`;
+  const filename=`${String(profile.name||"candidate").trim().replace(/[^a-z0-9]+/gi,"-").replace(/^-|-$/g,"")}-G-NEXT-CV.pdf`;
   link.href=URL.createObjectURL(blob);
   link.download=filename;
   document.body.appendChild(link);
@@ -1886,7 +1926,7 @@ function refreshProfileEntryLabels(type){
   $$(`.${type}-entry`).forEach((entry,index)=>{
     entry.dataset.entryIndex=index;
     const title=$(".profile-entry-head b",entry);
-    if(title)title.textContent=`${type==="education"?"Qualification":"Employment"} ${index+1}`;
+    if(title)title.textContent=type==="education"?(EDUCATION_LEVELS[index]||`Education ${index+1}`):`Employment ${index+1}`;
   });
 }
 function updateExperienceGapState(){
@@ -2258,14 +2298,17 @@ function showAssignmentForm(id){
 function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div>${j.experience?`<p><b>Experience:</b> ${esc(j.experience)}</p>`:""}<h3>Required skills</h3>${skillTags(j.skills)}${j.responsibilities?`<h3>Key responsibilities</h3><p>${esc(j.responsibilities)}</p>`:""}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>${session.role==="Client"?"Review candidates":"Source candidates"}</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":session.role==="Client"?"cv-review":"candidates";render()}) }
 function miniResumeMarkup(profile,{visible=true,external=false}={}){
   const experience=profile.experienceEntries||[];
-  const education=profile.educationEntries||[];
+  const education=normalizeEducationEntries(profile.educationEntries||[]);
   const email=external?profile.email:(visible?profile.email:maskedContact(profile.email));
   const phone=external?profile.phone:(visible?profile.phone:maskedContact(profile.phone));
+  const noticePeriod=profile.notice||profile.availability||"Not provided";
+  const lastWorkingDay=candidateLastWorkingDate(profile);
   return `<div class="mini-resume">
     <section class="mini-resume-summary"><h3>Professional summary</h3><p>${esc(profile.summary||`${profile.role} experienced in ${profile.skills}.`)}</p></section>
+    <section class="resume-availability-strip"><p><b>Notice period</b><span>${esc(noticePeriod)}</span></p><p><b>Last working day</b><span>${esc(lastWorkingDay)}</span></p></section>
     <section><h3>Core skills</h3><div class="display-tags">${String(profile.skills||"").split(",").filter(Boolean).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div></section>
     <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div></section>
-    <section><h3>Education</h3><div class="resume-education">${education.map(entry=>`<div><b>${esc(entry.degree||"Qualification")}</b><span>${esc(entry.institute||"Institute not specified")}</span><small>${esc(entry.year||"Year not provided")}${entry.percentage?` · ${esc(entry.percentage)}`:""}</small></div>`).join("")||`<p class="muted">Education details are not available.</p>`}</div></section>
+    <section><h3>Education</h3><div class="resume-education">${education.map(entry=>`<div><b>${esc(entry.level||"Education")}</b><span>${esc(entry.degree||"Degree not specified")}</span><small>${esc(entry.year||"Year not provided")}${entry.university?` · ${esc(entry.university)}`:""}</small></div>`).join("")||`<p class="muted">Education details are not available.</p>`}</div></section>
     <section class="resume-facts"><h3>Additional details</h3><div><p><b>Location</b><span>${esc(profile.location||"Not provided")}</span></p><p><b>Availability</b><span>${esc(profile.notice||profile.availability||"Not provided")}</span></p><p><b>Email</b><span>${esc(email||"Not provided")}</span></p><p><b>Phone</b><span>${esc(phone||"Not provided")}</span></p></div></section>
   </div>`;
 }
@@ -2324,7 +2367,7 @@ const BULK_IMPORTS = {
   users:{
     label:"users",
     headers:["name","email","role","status"],
-    sample:["Nikhil Rao","nikhil.rao@talentos.ai","Recruiter","Active"]
+    sample:["Nikhil Rao","nikhil.rao@gnext.ai","Recruiter","Active"]
   },
   clients:{
     label:"clients",
@@ -2449,7 +2492,7 @@ function showBulkUpload(kind){
     `<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-bulk-upload">Validate & import</button>`);
   let parsedRows=[];
   $(".modal-close-2").onclick=closeModal;
-  $("#download-bulk-template").onclick=()=>downloadCsv(`talentbridge-${kind}-template.csv`,[config.headers,config.sample]);
+  $("#download-bulk-template").onclick=()=>downloadCsv(`gnext-${kind}-template.csv`,[config.headers,config.sample]);
   $("#bulk-file").onchange=event=>{
     const file=event.target.files[0];
     if(!file)return;
@@ -2473,7 +2516,7 @@ function showBulkUpload(kind){
   };
 }
 function moveCandidate(id){const c=state.candidates.find(c=>c.id===id);if(!c)return;modal("Update pipeline stage",`<div class="field"><label>New stage</label><select id="new-stage">${PIPELINE_STAGES.map(s=>`<option class="${stageClass(s)}" ${s===c.stage?"selected":""}>${s}</option>`).join("")}</select></div><div class="field"><label>Notes</label><textarea placeholder="Add a note for the team..."></textarea></div>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Update stage</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const previousStage=c.stage;c.stage=$("#new-stage").value;addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:c.recruiter,client:c.client,message:`${c.name} moved from ${previousStage} to ${c.stage}`});addAssignmentNotification({roles:["Candidate"],candidateId:c.id,recruiter:c.recruiter,client:c.client,message:`Your application for ${c.role} moved to ${c.stage}`});save();closeModal();render();toast(`${c.name} moved to ${c.stage}`)}}
-function showUpload(){modal("Upload CV",`<div class="dropzone" style="padding:50px 20px">⇧<h3>Drop CV files here</h3><p>PDF or DOCX · Up to 10 files</p><button class="btn btn-secondary" id="fake-upload">Browse files</button></div><p style="color:var(--muted);font-size:12px">TALENTBRIDGE will parse contact details, skills, employment history, and flag possible duplicates.</p>`);$("#fake-upload").onclick=()=>{closeModal();toast("CV parsed. Candidate draft created")}}
+function showUpload(){modal("Upload CV",`<div class="dropzone" style="padding:50px 20px">⇧<h3>Drop CV files here</h3><p>PDF or DOCX · Up to 10 files</p><button class="btn btn-secondary" id="fake-upload">Browse files</button></div><p style="color:var(--muted);font-size:12px">${BRAND_NAME} will parse contact details, skills, employment history, and flag possible duplicates.</p>`);$("#fake-upload").onclick=()=>{closeModal();toast("CV parsed. Candidate draft created")}}
 function showInterviewForm(){if(session.role==="Candidate")return;modal("Schedule interview",`<form id="modal-form">${fields([{label:"Candidate",name:"candidateId",type:"select",options:roleCandidates(session.role).map(c=>`${c.id} · ${c.name}`)},{label:"Round",name:"round",type:"select",options:INTERVIEW_ROUNDS},{label:"Date",name:"date",type:"date"},{label:"Time",name:"time",type:"time"},{label:"Mode",name:"mode",type:"select",options:["Video","In person","AI Room","Phone"]},{label:"Interviewer",name:"interviewer"}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Schedule & notify</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const f=$("#modal-form");if(!f.reportValidity())return;const d=Object.fromEntries(new FormData(f));const c=state.candidates.find(candidate=>d.candidateId.startsWith(candidate.id));if(!c)return;const date=new Date(`${d.date}T00:00:00`);const formatted=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});state.interviews.unshift({...d,candidateId:c.id,candidate:c.name,jobId:c.jobId,id:nextId("INT",state.interviews),role:c.role,date:formatted,status:"Pending"});addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:c.recruiter,client:c.client,message:`${d.round} interview scheduled for ${c.name} on ${formatted} at ${d.time}`});addAssignmentNotification({roles:["Candidate"],candidateId:c.id,recruiter:c.recruiter,client:c.client,message:`Your ${d.round} interview is scheduled for ${formatted} at ${d.time}`});save();closeModal();render();toast("Interview scheduled and visible to all linked users")}}
 function reschedule(id){if(session.role==="Candidate")return;const interview=state.interviews.find(item=>item.id===id);if(!interview)return;modal(`Reschedule ${interview.candidate}`,`<form id="modal-form">${fields([{label:"New date",name:"date",type:"date"},{label:"New time",name:"time",type:"time"},{label:"Reason",name:"reason",type:"textarea",full:true}])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Send update</button>`);$(".modal-close-2").onclick=closeModal;$("#submit-modal").onclick=()=>{const form=$("#modal-form");if(!form.reportValidity())return;const data=Object.fromEntries(new FormData(form));const date=new Date(`${data.date}T00:00:00`);interview.date=date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});interview.time=data.time;interview.status="Pending";interview.rescheduleReason=data.reason;const candidate=state.candidates.find(item=>item.id===interview.candidateId);if(candidate){addAssignmentNotification({roles:["Admin","Recruiter","Client"],recruiter:candidate.recruiter,client:candidate.client,message:`${interview.round} interview for ${candidate.name} was rescheduled to ${interview.date} at ${interview.time}`});addAssignmentNotification({roles:["Candidate"],candidateId:candidate.id,recruiter:candidate.recruiter,client:candidate.client,message:`Your ${interview.round} interview was rescheduled to ${interview.date} at ${interview.time}`})}save();closeModal();render();toast("Interview rescheduled across all workspaces")}}
 function nextInterviewStage(candidate,interview){

@@ -1,4 +1,4 @@
-# TALENTBRIDGE
+# G-NEXT
 
 A self-contained recruitment operating system prototype based on the supplied Excel brief.
 
@@ -11,7 +11,7 @@ Open `index.html` in a browser. For best results, serve the folder with any loca
 ### GitHub Pages
 
 1. Create a new public repository at https://github.com/new
-2. Extract `TALENTBRIDGE-GitHub-Pages.zip`
+2. Extract `G-NEXT-GitHub-Pages.zip`
 3. In the repository, choose **Add file → Upload files**
 4. Upload the extracted files, including `index.html`, `app.js`, and `styles.css`
 5. Commit the files to the `main` branch
@@ -32,10 +32,10 @@ This prototype stores changes in each browser's local storage. Online hosting ma
 
 ## Demo accounts
 
-- Admin: `admin@talentos.ai`
-- Client: `client@talentos.ai`
-- Recruiter: `recruiter@talentos.ai`
-- Candidate: `candidate@talentos.ai`
+- Admin: `admin@gnext.ai`
+- Client: `client@gnext.ai`
+- Recruiter: `recruiter@gnext.ai`
+- Candidate: `candidate@gnext.ai`
 
 The login screen pre-fills access for every role. Data changes are stored in browser local storage.
 

@@ -423,6 +423,10 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 .profile-entry-head b { font: 700 13px Manrope; }
 .profile-entry textarea { min-height: 78px; }
 .add-profile-entry { margin-top: 11px; }
+.compact-education-list { gap: 8px; }
+.compact-education-list .profile-entry { padding: 12px 14px 2px; background: color-mix(in srgb, var(--canvas) 82%, var(--paper)); }
+.compact-education-list .profile-entry-head { margin-bottom: 8px; }
+.education-row-grid { grid-template-columns: 1.15fr .75fr 1.15fr; }
 .experience-gap-box { display: none; margin-top: 14px; padding: 14px; border: 1px solid #f0c280; border-radius: 10px; color: #8a4b16; background: #fff6e9; }
 .experience-gap-box.show { display: block; }
 .experience-gap-box.error { border-color: #efa0ad; color: #a92f43; background: #fff0f3; }
@@ -623,6 +627,15 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 .mini-resume h3 { margin: 0 0 10px; font: 700 13px Manrope; }
 .mini-resume-summary p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.65; }
 .mini-resume .display-tags { margin: 0; }
+.resume-availability-strip {
+  display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px;
+  padding: 12px 14px; border: 1px solid #ded8ff; border-radius: 12px; background: var(--purple-soft);
+}
+.mini-resume .resume-availability-strip { padding-top: 12px; border-top: 1px solid #ded8ff; }
+.resume-availability-strip p { margin: 0; }
+.resume-availability-strip b, .resume-availability-strip span { display: block; }
+.resume-availability-strip b { color: #5f4ac9; font-size: 9px; text-transform: uppercase; letter-spacing: .45px; }
+.resume-availability-strip span { margin-top: 4px; color: var(--ink); font-size: 12px; font-weight: 800; }
 .resume-timeline { display: grid; gap: 12px; }
 .resume-entry { position: relative; display: grid; grid-template-columns: 13px 1fr; gap: 9px; }
 .resume-entry > i { width: 9px; height: 9px; margin-top: 3px; border: 2px solid var(--paper); border-radius: 50%; background: var(--purple); box-shadow: 0 0 0 1px var(--purple); }
