@@ -640,10 +640,13 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 .resume-entry { position: relative; display: grid; grid-template-columns: 13px 1fr; gap: 9px; }
 .resume-entry > i { width: 9px; height: 9px; margin-top: 3px; border: 2px solid var(--paper); border-radius: 50%; background: var(--purple); box-shadow: 0 0 0 1px var(--purple); }
 .resume-entry:not(:last-child)::after { content: ""; position: absolute; left: 4px; top: 14px; bottom: -12px; width: 1px; background: var(--line); }
-.resume-entry b, .resume-entry strong, .resume-entry small { display: block; }
+.resume-entry b, .resume-entry strong, .resume-entry small, .resume-entry em { display: block; }
 .resume-entry b { font-size: 11px; }
 .resume-entry strong { margin-top: 2px; color: var(--muted); font-size: 10px; font-weight: 600; }
 .resume-entry small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.resume-entry em { margin-top: 4px; color: var(--purple); font-size: 9px; font-style: normal; font-weight: 800; }
+.resume-entry p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.resume-entry p b { display: inline; color: var(--ink); font-size: inherit; }
 .resume-education { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
 .resume-education > div { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--canvas); }
 .resume-education b, .resume-education span, .resume-education small { display: block; }

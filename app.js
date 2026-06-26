@@ -1797,6 +1797,15 @@ function cvMonth(value){
   const [year,month]=value.split("-").map(Number);
   return new Date(year,month-1,1).toLocaleDateString("en-IN",{month:"short",year:"numeric"});
 }
+function experienceTenure(entry={}){
+  const start=monthIndex(entry.startMonth);
+  const end=monthIndex(entry.endMonth);
+  if(start===null||end===null||end<start)return "Tenure not available";
+  const months=end-start+1;
+  const years=Math.floor(months/12);
+  const rest=months%12;
+  return [years?`${years} yr${years>1?"s":""}`:"",rest?`${rest} mo${rest>1?"s":""}`:""].filter(Boolean).join(" ")||"Less than 1 month";
+}
 function latestLeavingReasons(candidate){
   const entries=(candidate.experienceEntries||[])
     .map((entry,index)=>({...entry,index,endIndex:monthIndex(entry.endMonth),startIndex:monthIndex(entry.startMonth)}))
@@ -1848,7 +1857,8 @@ function buildProfilePdf(profile){
   heading("Professional Experience");
   (profile.experienceEntries||[]).forEach(entry=>{
     line(`${entry.designation} | ${entry.company}`,{bold:true,leading:15});
-    line(`${cvMonth(entry.startMonth)} - ${cvMonth(entry.endMonth)}`,{size:9,leading:15,spaceAfter:3});
+    line(`${cvMonth(entry.startMonth)} - ${cvMonth(entry.endMonth)} | Duration: ${experienceTenure(entry)}`,{size:9,leading:15,spaceAfter:1});
+    line(`Reason for leaving: ${entry.reasonForLeaving||profile.reasonForLeaving||"Reason not shared yet."}`,{size:9,leading:14,spaceAfter:3});
   });
   if(profile.experienceGapReason)line(`Employment gap note: ${profile.experienceGapReason}`,{size:9,spaceAfter:3});
   heading("Education");
@@ -2307,7 +2317,7 @@ function miniResumeMarkup(profile,{visible=true,external=false}={}){
     <section class="mini-resume-summary"><h3>Professional summary</h3><p>${esc(profile.summary||`${profile.role} experienced in ${profile.skills}.`)}</p></section>
     <section class="resume-availability-strip"><p><b>Notice period</b><span>${esc(noticePeriod)}</span></p><p><b>Last working day</b><span>${esc(lastWorkingDay)}</span></p></section>
     <section><h3>Core skills</h3><div class="display-tags">${String(profile.skills||"").split(",").filter(Boolean).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div></section>
-    <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div></section>
+    <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small><em>Duration: ${esc(experienceTenure(entry))}</em><p><b>Reason for leaving:</b> ${esc(entry.reasonForLeaving||profile.reasonForLeaving||"Reason not shared yet.")}</p></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div></section>
     <section><h3>Education</h3><div class="resume-education">${education.map(entry=>`<div><b>${esc(entry.level||"Education")}</b><span>${esc(entry.degree||"Degree not specified")}</span><small>${esc(entry.year||"Year not provided")}${entry.university?` · ${esc(entry.university)}`:""}</small></div>`).join("")||`<p class="muted">Education details are not available.</p>`}</div></section>
     <section class="resume-facts"><h3>Additional details</h3><div><p><b>Location</b><span>${esc(profile.location||"Not provided")}</span></p><p><b>Availability</b><span>${esc(profile.notice||profile.availability||"Not provided")}</span></p><p><b>Email</b><span>${esc(email||"Not provided")}</span></p><p><b>Phone</b><span>${esc(phone||"Not provided")}</span></p></div></section>
   </div>`;
