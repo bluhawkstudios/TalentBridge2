@@ -319,6 +319,7 @@ state.profile.experienceEntries=state.profile.experienceEntries.map(entry=>{
   return {...entry,designation:durationOnly?"":designation,reasonForLeaving:entry.reasonForLeaving||""};
 });
 state.profile.experienceGapReason ||= "";
+state.profile.experienceGapReasons=Array.isArray(state.profile.experienceGapReasons)?state.profile.experienceGapReasons:[];
 state.profile.completion=profileCompletionPercent(state.profile);
 state.integrations ||= [
   {id:"linkedin",name:"LinkedIn",category:"Professional network",connected:true,enabled:true,apiKey:"••••••••••••LNK4",lastSync:"Today, 9:20 AM"},
@@ -355,6 +356,8 @@ state.candidates=state.candidates.map((candidate,index)=>{
     reasonForLeaving:candidate.reasonForLeaving||LEAVING_REASONS[index%LEAVING_REASONS.length],
     summary:candidate.summary||(isProfileCandidate?`${state.profile.experienceEntries?.[0]?.designation||candidate.role} experienced in ${state.profile.skills}.`:sourcedProfile?.summary||`${candidate.role} with experience in ${candidate.skills}, currently available in ${candidate.location}.`),
     experienceEntries:candidate.experienceEntries||(isProfileCandidate?state.profile.experienceEntries:sourcedProfile?.experienceEntries||demoExperienceFor(candidate,index)),
+    experienceGapReasons:Array.isArray(candidate.experienceGapReasons)?candidate.experienceGapReasons:(isProfileCandidate?state.profile.experienceGapReasons:[]),
+    experienceGapReason:candidate.experienceGapReason||"",
     educationEntries:normalizeEducationEntries(candidate.educationEntries||(isProfileCandidate?state.profile.educationEntries:sourcedProfile?.educationEntries||[{degree:["B.Tech","MBA","M.Sc","B.Des"][index%4],institute:["State University","National Institute of Technology","Business School","Design Institute"][index%4],year:String(2014+(index%9))}]))
   };
 });
@@ -967,7 +970,7 @@ function aiRecruiterDraftSummary(draft=state.clientAiRecruiter.draft){
   return `<div class="ai-jd-summary"><h3>${esc(draft.title||"New role")}</h3><div><span><small>Engagement</small><b>${esc(draft.type||"Permanent")}</b></span><span><small>Department</small><b>${esc(draft.department||"General")}</b></span><span><small>Location</small><b>${esc(draft.location||"Not specified")} · ${esc(draft.mode||"Hybrid")}</b></span><span><small>Openings</small><b>${esc(draft.openings||1)}</b></span><span><small>Experience</small><b>${esc(draft.experience||"Not specified")}</b></span><span><small>Salary</small><b>${esc(draft.salary||"To be discussed")}</b></span></div><p><b>Skills:</b> ${esc(draft.skills||"Not specified")}</p><p><b>Key responsibilities:</b> ${esc(draft.responsibilities||"Not specified")}</p></div>`;
 }
 function aiRecruiterMessageMarkup(message){
-  const content=message.kind==="chart"?`${esc(message.text)}${aiRecruiterActivityChart()}`:message.kind==="permission"?`${esc(message.text)}${aiRecruiterDraftSummary(message.draft)}<div class="ai-permission-actions"><button class="btn btn-secondary" id="ai-edit-jd">Edit details</button><button class="btn btn-primary" id="ai-generate-job">Yes, generate job</button></div>`:message.kind==="created"?`${esc(message.text)}<div class="ai-created-job"><b>${esc(message.jobId)} · ${esc(message.title)}</b><span>Pending Admin recruiter assignment</span><button class="mini-btn" data-go="jobs">Open My Job Listings</button></div>`:esc(message.text);
+  const content=message.kind==="chart"?`${esc(message.text)}${aiRecruiterActivityChart()}`:message.kind==="permission"?`${esc(message.text)}${aiRecruiterDraftSummary(message.draft)}<div class="ai-permission-actions"><button class="btn btn-secondary" id="ai-edit-jd">Edit</button><button class="btn btn-primary" id="ai-generate-job">Post job</button></div>`:message.kind==="created"?`${esc(message.text)}<div class="ai-created-job"><b>${esc(message.jobId)} · ${esc(message.title)}</b><span>Pending Admin recruiter assignment</span><button class="mini-btn" data-go="jobs">Open My Job Listings</button></div>`:esc(message.text);
   return `<div class="ai-recruiter-message ${message.from==="user"?"user":"assistant"}"><span class="ai-message-avatar">${message.from==="user"?initials(roles.Client.user):"AI"}</span><div>${content}<small>${message.time||"Just now"}</small></div></div>`;
 }
 function aiRecruiterQuickReplies(){
@@ -1010,10 +1013,60 @@ function renderClientAiRecruiterWidget(){
 function addAiRecruiterMessage(from,text,extra={}){
   state.clientAiRecruiter.messages.push({from,text,time:"Just now",...extra});
 }
-function startAiRecruiterJd(){
+function cleanRequestedJobTitle(text){
+  let title=String(text||"").replace(/[?.!]+$/,"").trim();
+  title=title.replace(/^(please\s+)?(help\s+me\s+with|create|generate|post|make|draft|prepare)\s+(a\s+|an\s+)?/i,"");
+  title=title.replace(/\b(job\s+post|job\s+posting|jd|job\s+description|new\s+job|job|role|opening|hire|recruitment)\b/ig," ");
+  title=title.replace(/\b(for|of|as|profile|title|particular|perticular)\b/ig," ");
+  title=title.replace(/\b(a|an|the|with|me|help)\b/ig," ");
+  title=title.replace(/\s+/g," ").trim();
+  if(!title || /^(job|role|opening|new)$/i.test(title))return "";
+  return title.split(" ").map(word=>/^(ai|ui|ux|hr|qa|devops|sre|seo)$/i.test(word)?word.toUpperCase():word.charAt(0).toUpperCase()+word.slice(1)).join(" ");
+}
+function suggestedJobDraft(title){
+  const lower=title.toLowerCase();
+  const isContract=/contract|freelance|consultant/.test(lower);
+  const isAiAgent=/ai agent|agent|bot/.test(lower);
+  const profile=isAiAgent?"ai":/designer|ui|ux|product design/.test(lower)?"design":/data|analytics|bi|engineer/.test(lower)?"data":/react|front|javascript|node|java|python|developer|engineer|software|full stack/.test(lower)?"tech":/sales|business development|account/.test(lower)?"sales":/hr|recruiter|talent/.test(lower)?"hr":"general";
+  const templates={
+    tech:{department:"Engineering",skills:"Problem solving, System design, APIs, Cloud, Agile delivery",experience:"4-7 years",salary:"₹18–25 LPA",responsibilities:"Build and maintain scalable applications, collaborate with product and business teams, write clean production-ready code, own delivery quality, and support deployments."},
+    data:{department:"Data & Analytics",skills:"Python, SQL, Data pipelines, Dashboards, Cloud data platforms",experience:"4-8 years",salary:"₹20–30 LPA",responsibilities:"Design data pipelines, build reliable reports and analytics models, partner with stakeholders on insights, improve data quality, and automate recurring analysis."},
+    design:{department:"Product Design",skills:"Figma, UX research, Design systems, Prototyping, Stakeholder management",experience:"5-8 years",salary:"₹24–34 LPA",responsibilities:"Lead discovery and UX flows, create high-fidelity designs, maintain design systems, validate ideas with users, and partner with product and engineering through launch."},
+    sales:{department:"Sales",skills:"Lead generation, CRM, Negotiation, Account management, Forecasting",experience:"3-6 years",salary:"₹12–20 LPA",responsibilities:"Manage qualified pipeline, run client conversations, prepare proposals, maintain CRM hygiene, forecast revenue, and partner with delivery teams for smooth handover."},
+    hr:{department:"Human Resources",skills:"Talent acquisition, Stakeholder management, Screening, Interview coordination, HR operations",experience:"3-6 years",salary:"₹10–18 LPA",responsibilities:"Manage hiring intake, source and screen candidates, coordinate interviews, maintain candidate experience, and publish hiring updates to stakeholders."},
+    ai:{department:"AI Workforce",skills:"Workflow automation, Prompt design, API integration, Reporting, Human handoff",experience:"AI agent configuration",salary:"Starter · ₹25,000 / month",responsibilities:"Configure an AI agent to manage repeatable hiring tasks, answer workflow queries, prepare summaries, trigger handoffs, and report outcomes to the hiring team."},
+    general:{department:"Operations",skills:"Communication, Ownership, Stakeholder management, Reporting, Process improvement",experience:"3-6 years",salary:"₹12–20 LPA",responsibilities:"Own day-to-day delivery, coordinate with stakeholders, maintain operating dashboards, solve process gaps, and drive measurable business outcomes."}
+  };
+  const picked=templates[profile];
+  return {
+    title,
+    projectName:"Generated by AI Recruiter",
+    type:isAiAgent?"AI Agent":isContract?"Contract":"Permanent",
+    department:picked.department,
+    location:roles.Client.location||"Bengaluru",
+    mode:isAiAgent?"Cloud hosted":"Hybrid",
+    openings:1,
+    experience:picked.experience,
+    skills:picked.skills,
+    responsibilities:picked.responsibilities,
+    salary:isContract&&!isAiAgent?"₹1.5L / month":picked.salary
+  };
+}
+function prepareAiRecruiterDraftFromText(text){
+  const title=cleanRequestedJobTitle(text);
+  if(!title){
+    state.clientAiRecruiter.step="profileTitle";
+    addAiRecruiterMessage("ai","Sure. Which job profile title should I create the post for?");
+    return;
+  }
+  const draft=suggestedJobDraft(title);
+  state.clientAiRecruiter.draft=draft;
+  state.clientAiRecruiter.step="permission";
+  addAiRecruiterMessage("ai",`I created a suggested job post for ${title}. Review it below, then post it or edit the details before posting.`,{kind:"permission",draft:{...draft}});
+}
+function startAiRecruiterJd(text=""){
   state.clientAiRecruiter.draft={};
-  state.clientAiRecruiter.step="title";
-  addAiRecruiterMessage("ai","I will help create the job description. What is the job title?");
+  prepareAiRecruiterDraftFromText(text);
 }
 function answerClientActivity(question){
   const activity=clientActivitySnapshot();
@@ -1046,6 +1099,10 @@ function answerClientActivity(question){
 }
 function advanceAiRecruiterJd(answer){
   const chat=state.clientAiRecruiter;
+  if(chat.step==="profileTitle"){
+    prepareAiRecruiterDraftFromText(answer);
+    return;
+  }
   const draft=chat.draft;
   if(chat.step==="salary"){
     draft.salary=answer.trim();
@@ -1079,11 +1136,35 @@ function handleAiRecruiterMessage(text){
   addAiRecruiterMessage("user",text);
   if(chat.step==="idle"){
     if(answerClientActivity(text))return;
-    if(/create|post|hire|new job|jd|recruit/.test(text.toLowerCase())){startAiRecruiterJd();return}
+    if(/create|post|hire|new job|jd|job description|job post|job posting|recruit/.test(text.toLowerCase())){startAiRecruiterJd(text);return}
     addAiRecruiterMessage("ai","I can help create a job description, share a company activity summary or graph, and answer questions about jobs, CVs, interviews, offers, and joining activity.");
     return;
   }
   advanceAiRecruiterJd(text);
+}
+function showAiRecruiterDraftEditor(){
+  const draft=state.clientAiRecruiter.draft||suggestedJobDraft("New Role");
+  modal("Edit AI generated job post",`<form id="modal-form">${fields([
+    {label:"Job title",name:"title",value:draft.title||""},
+    {label:"Engagement",name:"type",type:"select",options:["Permanent","Contract","AI Agent"],value:draft.type||"Permanent"},
+    {label:"Department",name:"department",value:draft.department||"General"},
+    {label:"Location",name:"location",type:"city",value:draft.location||""},
+    {label:"Work mode",name:"mode",type:"select",options:[...APP_OPTIONS.workModes,"Cloud hosted","Private cloud","Hybrid deployment"],value:draft.mode||"Hybrid"},
+    {label:"Openings",name:"openings",type:"number",value:draft.openings||1},
+    {label:"Experience range",name:"experience",value:draft.experience||""},
+    {label:"Salary / rate",name:"salary",value:draft.salary||""},
+    {label:"Skills",name:"skills",type:"tags",value:draft.skills||"",full:true},
+    {label:"Key responsibilities",name:"responsibilities",type:"textarea",value:draft.responsibilities||"",full:true}
+  ])}</form>`,`<button class="btn btn-secondary modal-close-2">Cancel</button><button class="btn btn-primary" id="submit-modal">Save changes</button>`);
+  $(".modal-close-2").onclick=closeModal;
+  $("#submit-modal").onclick=()=>{
+    const form=$("#modal-form");
+    if(!form.reportValidity())return;
+    state.clientAiRecruiter.draft={...draft,...Object.fromEntries(new FormData(form))};
+    state.clientAiRecruiter.step="permission";
+    addAiRecruiterMessage("ai","Updated the suggested job post. Please review the revised version below.",{kind:"permission",draft:{...state.clientAiRecruiter.draft}});
+    save();closeModal();render();
+  };
 }
 function generateAiRecruiterJob(){
   const chat=state.clientAiRecruiter;
@@ -1105,6 +1186,67 @@ function generateAiRecruiterJob(){
   chat.draft={};
   addAiRecruiterMessage("ai",`The job has been generated in My Job Listings. Admin has been notified to assign a recruiter. After assignment, it will appear in the Recruiter's My Assigned Jobs.`,{kind:"created",jobId:job.id,title:job.title});
   save();
+}
+
+function salaryAnnualLpa(value){
+  const text=String(value||"").toLowerCase();
+  const numbers=text.match(/\d+(?:\.\d+)?/g)?.map(Number)||[];
+  if(!numbers.length)return null;
+  const max=Math.max(...numbers);
+  return /month|monthly|\/\s*mo/.test(text)?max*12:max;
+}
+function marketTokens(value){
+  return String(value||"").toLowerCase().split(/[^a-z0-9+#.]+/).filter(token=>token.length>2);
+}
+function marketProfileMatchesJob(profile,job,candidate){
+  if(candidate?.jobId===job.id)return true;
+  const jobTokens=new Set(marketTokens([job.title,job.skills].join(" ")));
+  const profileTokens=marketTokens([profile.role,profile.skills].join(" "));
+  return profileTokens.some(token=>jobTokens.has(token)) || String(profile.role||"").toLowerCase()===String(job.title||"").toLowerCase();
+}
+function clientMarketIntelligence(jobs){
+  if(!jobs.length)return [
+    ["Total Matched Candidates",0,"total"],
+    ["Total Matched Immediate Joiners",0,"immediate"],
+    ["Total Matched Sr. Candidates",0,"senior"],
+    ["Matched Candidates in Job Location",0,"location"],
+    ["Matched Within Budget",0,"budget"],
+    ["Matched AI Agents",0,"agents"]
+  ];
+  const clientJobLocations=new Set(jobs.map(job=>String(job.location||"").trim().toLowerCase()).filter(Boolean));
+  const profiles=state.externalTalent.filter(profile=>profile.source===BRAND_SOURCE_NAME).filter(profile=>{
+    const candidate=state.candidates.find(item=>item.id===profile.candidateId);
+    return jobs.some(job=>marketProfileMatchesJob(profile,job,candidate));
+  });
+  const withinBudget=profiles.filter(profile=>{
+    const candidate=state.candidates.find(item=>item.id===profile.candidateId);
+    const profileCost=salaryAnnualLpa(candidate?.ctc||profile.ctc);
+    if(profileCost===null)return false;
+    return jobs.some(job=>{
+      const jobBudget=salaryAnnualLpa(job.salary);
+      if(jobBudget===null)return false;
+      return marketProfileMatchesJob(profile,job,candidate) && profileCost<=jobBudget;
+    });
+  }).length;
+  const inLocation=profiles.filter(profile=>{
+    const location=String(profile.location||"").trim().toLowerCase();
+    return clientJobLocations.has(location) || (clientJobLocations.has("remote") && /remote/.test(location));
+  }).length;
+  const matchedAiAgents=jobs.filter(job=>job.type==="AI Agent").reduce((total,job)=>total+(Number(job.openings)||1),0);
+  return [
+    ["Total Matched Candidates",profiles.length,"total"],
+    ["Total Matched Immediate Joiners",profiles.filter(profile=>/immediate/i.test(profile.availability||"")).length,"immediate"],
+    ["Total Matched Sr. Candidates",profiles.filter(profile=>Number(profile.experience)>=6 || /senior|sr\.?|lead|manager|principal|architect/i.test(profile.role||"")).length,"senior"],
+    ["Matched Candidates in Job Location",inLocation,"location"],
+    ["Matched Within Budget",withinBudget,"budget"],
+    ["Matched AI Agents",matchedAiAgents,"agents"]
+  ];
+}
+function marketIntelligenceCard(jobs){
+  const metrics=clientMarketIntelligence(jobs);
+  return `<div class="card panel market-intel-panel"><div class="panel-head"><div><h3>${BRAND_NAME} AI Matched Market Intelligence</h3><small>From ${BRAND_SOURCE_NAME} based on your posted jobs</small></div></div><div class="market-intel-grid">
+    ${metrics.map(item=>`<div class="market-intel-tile market-intel-${item[2]}"><small>${item[0]}</small><b>${item[1]}</b></div>`).join("")}
+  </div></div>`;
 }
 
 function dashboard(role) {
@@ -1154,6 +1296,9 @@ function dashboard(role) {
     ["offer","◇",candidates.filter(candidate=>candidate.stage==="Offered").length,"Candidates at offer stage","Awaiting offer action","2 hr"],
     ["job","▤",activeJobs,"Jobs currently active","Open hiring requirements","4 hr"]
   ];
+  const activityPanel=`<div class="card panel recent-activity-panel"><div class="panel-head"><div><h3>Recent activity</h3><small>Live hiring signals</small></div><a data-go="${pipelineDestination(role)}">View all <span>→</span></a></div><div class="activity dashboard-activity">
+      ${activityItems.map(item=>`<div class="activity-item activity-${item[0]}"><span class="activity-icon">${item[1]}</span><div class="activity-copy"><p><b>${item[2]}</b> ${item[3]}</p><small>${item[4]}</small></div><time>${item[5]}</time></div>`).join("")}
+    </div></div>`;
   const dashboardTitle=role==="Candidate"?`${(state.profile.name||roles.Candidate.user).trim().split(/\s+/)[0]}'s Dashboard`:`${role} Dashboard`;
   return `${pageHead(dashboardTitle,intro,dashboardDateFilter(role))}
   ${aiSummaryCard(summary)}
@@ -1162,9 +1307,7 @@ function dashboard(role) {
     <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"My applications":"Hiring pipeline"}</h3>${tabs()}</div>
       <div class="funnel">${stageGroups.map(stage=>`<div class="bar-set pipeline-bar-link ${stageClass(stage[2])}" data-go="${pipelineDestination(role)}" data-view-filter="${stage[3]}" role="link" tabindex="0" aria-label="View ${stage[1]} candidates in ${stage[0]}"><div class="bar" style="height:${pipelineBarHeight(stage[1],maxStage)}px"><b>${stage[1]}</b></div><small>${stage[0]}</small></div>`).join("")}</div>
     </div>
-    <div class="card panel recent-activity-panel"><div class="panel-head"><div><h3>Recent activity</h3><small>Live hiring signals</small></div><a data-go="${pipelineDestination(role)}">View all <span>→</span></a></div><div class="activity dashboard-activity">
-      ${activityItems.map(item=>`<div class="activity-item activity-${item[0]}"><span class="activity-icon">${item[1]}</span><div class="activity-copy"><p><b>${item[2]}</b> ${item[3]}</p><small>${item[4]}</small></div><time>${item[5]}</time></div>`).join("")}
-    </div></div>
+    ${role==="Client"?marketIntelligenceCard(jobs):activityPanel}
   </div>
   <div class="card panel"><div class="panel-head"><h3>${role==="Candidate"?"Active applications":"Priority jobs"}</h3><a data-go="${role==="Candidate"?"applications":"jobs"}">View all</a></div>
     <div class="table-wrap"><table><thead><tr><th>Role</th><th>Type</th><th>Status</th><th>${role==="Candidate"?"Progress":"Candidates"}</th><th>Interviews</th><th>Owner</th></tr></thead><tbody>
@@ -1469,7 +1612,7 @@ function profilePage() {
   <div class="experience-gap-box" id="experience-gap-box">
     <b>Experience gap detected</b>
     <p id="experience-gap-message"></p>
-    <div class="field"><label id="experience-gap-reason-label">Reason for employment gap</label><textarea name="experienceGapReason" placeholder="Please explain the reason for the detected employment gap">${esc(p.experienceGapReason||"")}</textarea></div>
+    <div class="gap-reason-list" id="experience-gap-reason-list"></div>
   </div>
   <div class="section-title">Skills</div>
   ${fields([{label:"Skills",name:"skills",type:"tags",value:p.skills,full:true}])}
@@ -1519,9 +1662,7 @@ function bindPage() {
   $("#ai-generate-job")?.addEventListener("click",()=>{clientAiOpen=true;generateAiRecruiterJob();render();toast("Job generated and Admin notified")});
   $("#ai-edit-jd")?.addEventListener("click",()=>{
     clientAiOpen=true;
-    state.clientAiRecruiter.step="title";
-    addAiRecruiterMessage("ai",`No problem. The current title is ${state.clientAiRecruiter.draft.title||"not set"}. What should the job title be?`);
-    save();render();
+    showAiRecruiterDraftEditor();
   });
   $("#ai-new-conversation")?.addEventListener("click",()=>{
     clientAiOpen=true;
@@ -1642,14 +1783,15 @@ function bindPage() {
     const gap=detectExperienceGaps(experienceEntries);
     if(gap.invalid.length){toast("Correct employment dates where the end month is before the start month");return}
     if(updated.notice==="Immediate"&&!updated.lastWorkingDay){toast("Add your last working day for Immediate availability");$("#last-working-day-wrap input")?.focus();return}
-    if(gap.hasGap&&!String(updated.experienceGapReason||"").trim()){toast("Add a reason for the detected experience gap");$('[name="experienceGapReason"]')?.focus();return}
+    updated.experienceGapReasons=gap.hasGap?collectExperienceGapReasons(gap.gaps):[];
+    if(gap.hasGap&&updated.experienceGapReasons.some(item=>!profileFieldComplete(item.reason))){toast("Add a separate reason for each detected experience gap");$("[data-gap-reason-key]")?.focus();return}
     updated.currentFixed=Number(updated.currentFixed);
     updated.currentVariable=Number(updated.currentVariable);
     updated.expectedCtc=Number(updated.expectedCtc);
     updated.lastWorkingDay=updated.notice==="Immediate"?updated.lastWorkingDay:"";
     updated.educationEntries=educationEntries;
     updated.experienceEntries=experienceEntries;
-    updated.experienceGapReason=gap.hasGap?String(updated.experienceGapReason||"").trim():"";
+    updated.experienceGapReason="";
     updated.location=[updated.locality,updated.city,updated.state].filter(Boolean).join(", ");
     updated.completion=profileCompletionPercent(updated);
     const candidate=profileCandidateRecord();
@@ -1658,7 +1800,7 @@ function bindPage() {
     Object.assign(state.profile,updated);
     if(candidate)state.profile.candidateId=candidate.id;
     const currentTotal=updated.currentFixed+updated.currentVariable;
-    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,lastWorkingDay:updated.lastWorkingDay,lastWorkingDate:updated.lastWorkingDay||lastWorkingDateFromNotice(updated.notice),reasonForLeaving:updated.experienceEntries[0]?.reasonForLeaving||candidate.reasonForLeaving,skills:updated.skills,experienceEntries:updated.experienceEntries,educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
+    if(candidate)Object.assign(candidate,{name:updated.name,email:updated.email,phone:updated.phone,location:updated.location,state:updated.state,city:updated.city,locality:updated.locality,notice:updated.notice,lastWorkingDay:updated.lastWorkingDay,lastWorkingDate:updated.lastWorkingDay||lastWorkingDateFromNotice(updated.notice),reasonForLeaving:updated.experienceEntries[0]?.reasonForLeaving||candidate.reasonForLeaving,skills:updated.skills,experienceEntries:updated.experienceEntries,experienceGapReasons:updated.experienceGapReasons,experienceGapReason:"",educationEntries:updated.educationEntries,summary:`${updated.experienceEntries[0]?.designation||candidate.role} experienced in ${updated.skills}.`,ctc:`₹${currentTotal.toFixed(2).replace(/\.00$/,"")} LPA`});
     const user=state.users.find(item=>item.email===previousCandidateEmail||item.name===previousCandidateName||item.email===roles.Candidate.email);
     if(user)Object.assign(user,{name:updated.name,email:updated.email});
     save();render();toast("Profile updated across all linked workspaces");
@@ -1736,6 +1878,29 @@ function detectExperienceGaps(entries=collectProfileEntries("experience")){
   }
   return {hasGap:gaps.length>0,gaps,invalid};
 }
+function gapReasonKey(gap={}){
+  return [gap.from,gap.to,gap.previousCompany,gap.nextCompany].map(value=>String(value||"").trim().toLowerCase()).join("|");
+}
+function normalizeGapReasons(profile={},gaps=[]){
+  const existing=Array.isArray(profile.experienceGapReasons)?profile.experienceGapReasons:[];
+  return gaps.map((gap,index)=>{
+    const key=gapReasonKey(gap);
+    const match=existing.find(item=>item.key===key);
+    return {...gap,key,reason:match?.reason||(!existing.length&&index===0?profile.experienceGapReason||"":"")};
+  });
+}
+function collectExperienceGapReasons(gaps=[]){
+  const fields=$$("[data-gap-reason-key]");
+  return gaps.map(gap=>{
+    const key=gapReasonKey(gap);
+    const input=fields.find(field=>field.dataset.gapReasonKey===key);
+    return {...gap,key,reason:(input?.value||"").trim()};
+  });
+}
+function gapReasonsComplete(profile={},gapResult=detectExperienceGaps(profile.experienceEntries||[])){
+  if(!gapResult.hasGap)return true;
+  return normalizeGapReasons(profile,gapResult.gaps).every(item=>profileFieldComplete(item.reason));
+}
 function profileFieldComplete(value){
   return value!==undefined&&value!==null&&String(value).trim()!=="";
 }
@@ -1760,7 +1925,7 @@ function profileCompletionPercent(profile){
     String(profile.skills||"").split(",").some(skill=>skill.trim()),
     educationComplete,
     experienceComplete,
-    !gap.hasGap||profileFieldComplete(profile.experienceGapReason)
+    gapReasonsComplete(profile,gap)
   ];
   return Math.round(checks.filter(Boolean).length/checks.length*100);
 }
@@ -1773,7 +1938,8 @@ function profileFormSnapshot(){
   data.experienceEntries=collectProfileEntries("experience");
   data.lastWorkingDay=data.notice==="Immediate"?(data.lastWorkingDay||""):"";
   const gap=detectExperienceGaps(data.experienceEntries);
-  data.experienceGapReason=gap.hasGap?(data.experienceGapReason||""):"";
+  data.experienceGapReasons=gap.hasGap?collectExperienceGapReasons(gap.gaps):[];
+  data.experienceGapReason="";
   return data;
 }
 function updateProfileCompletionUI(){
@@ -1805,6 +1971,12 @@ function experienceTenure(entry={}){
   const years=Math.floor(months/12);
   const rest=months%12;
   return [years?`${years} yr${years>1?"s":""}`:"",rest?`${rest} mo${rest>1?"s":""}`:""].filter(Boolean).join(" ")||"Less than 1 month";
+}
+function experienceGapResumeNote(profile={}){
+  const result=detectExperienceGaps(profile.experienceEntries||[]);
+  if(!result.hasGap)return "";
+  const reasons=normalizeGapReasons(profile,result.gaps);
+  return `<div class="resume-gap-note"><b>Employment gap reasons</b>${reasons.map((gap,index)=>`<article><p><b>Gap ${index+1}:</b> ${gap.months} month${gap.months>1?"s":""} from ${esc(gap.from)} to ${esc(gap.to)}, between ${esc(gap.previousCompany)} and ${esc(gap.nextCompany)}.</p><strong>${esc(gap.reason||"Reason not shared yet.")}</strong></article>`).join("")}</div>`;
 }
 function latestLeavingReasons(candidate){
   const entries=(candidate.experienceEntries||[])
@@ -1860,7 +2032,10 @@ function buildProfilePdf(profile){
     line(`${cvMonth(entry.startMonth)} - ${cvMonth(entry.endMonth)} | Duration: ${experienceTenure(entry)}`,{size:9,leading:15,spaceAfter:1});
     line(`Reason for leaving: ${entry.reasonForLeaving||profile.reasonForLeaving||"Reason not shared yet."}`,{size:9,leading:14,spaceAfter:3});
   });
-  if(profile.experienceGapReason)line(`Employment gap note: ${profile.experienceGapReason}`,{size:9,spaceAfter:3});
+  normalizeGapReasons(profile,detectExperienceGaps(profile.experienceEntries||[]).gaps).forEach((gap,index)=>{
+    line(`Employment gap ${index+1}: ${gap.months} month${gap.months>1?"s":""} from ${gap.from} to ${gap.to}, between ${gap.previousCompany} and ${gap.nextCompany}.`,{size:9,leading:14,spaceAfter:1});
+    line(`Gap reason: ${gap.reason||"Reason not shared yet."}`,{size:9,leading:14,spaceAfter:3});
+  });
   heading("Education");
   (normalizeEducationEntries(profile.educationEntries)||[]).forEach(entry=>line([entry.level,entry.degree,entry.year,entry.university].filter(Boolean).join(" | "),{bold:true,spaceAfter:3}));
   if(profile.currentFixed!==undefined||profile.ctc||profile.expectedCtc!==undefined){
@@ -1946,22 +2121,23 @@ function updateExperienceGapState(){
   $$(".experience-entry").forEach(entry=>entry.classList.remove("entry-invalid"));
   result.invalid.forEach(item=>$$(".experience-entry")[item.index]?.classList.add("entry-invalid"));
   const message=$("#experience-gap-message");
-  const reasonLabel=$("#experience-gap-reason-label");
-  const reasonInput=$('[name="experienceGapReason"]');
+  const reasonList=$("#experience-gap-reason-list");
   if(result.invalid.length){
     box.classList.add("show","error");
     message.textContent="An end month is earlier than its start month. Correct the highlighted employment entry.";
+    if(reasonList)reasonList.innerHTML="";
   }else if(result.hasGap){
     box.classList.add("show");
     box.classList.remove("error");
     message.innerHTML=result.gaps.map(gap=>`<span>A <b>${gap.months}-month employment gap</b> was detected from <b>${gap.from}</b> to <b>${gap.to}</b>, between <b>${esc(gap.previousCompany)}</b> and <b>${esc(gap.nextCompany)}</b>.</span>`).join("");
-    if(reasonLabel)reasonLabel.textContent=result.gaps.length===1?`Reason for the gap between ${result.gaps[0].previousCompany} and ${result.gaps[0].nextCompany}`:"Reason for the detected employment gaps";
-    if(reasonInput)reasonInput.placeholder=result.gaps.length===1?`Explain the gap from ${result.gaps[0].from} to ${result.gaps[0].to}`:"Explain the reason for each detected employment gap";
+    if(reasonList){
+      const saved=normalizeGapReasons(profileFormSnapshot(),result.gaps);
+      reasonList.innerHTML=saved.map((gap,index)=>`<div class="field gap-reason-field"><label>Reason for gap ${index+1}: ${esc(gap.from)} to ${esc(gap.to)}</label><textarea data-gap-reason-key="${esc(gap.key)}" placeholder="Explain the gap between ${esc(gap.previousCompany)} and ${esc(gap.nextCompany)}" required>${esc(gap.reason||"")}</textarea></div>`).join("");
+    }
   }else{
     box.classList.remove("show","error");
     message.textContent="";
-    if(reasonLabel)reasonLabel.textContent="Reason for employment gap";
-    if(reasonInput)reasonInput.placeholder="Please explain the reason for the detected employment gap";
+    if(reasonList)reasonList.innerHTML="";
   }
 }
 function updateProfileCityOptions({clearInvalid=false}={}){
@@ -2306,7 +2482,7 @@ function showAssignmentForm(id){
   };
 }
 function showJob(j){modal(j.title,`<div style="display:flex;gap:8px;margin-bottom:15px">${badge(j.type)}${badge(j.status)}${badge(j.assignmentStatus)}${urgencyBadge(j.urgency)}</div><h3>${j.client}</h3><p>${j.department||"General"}${j.projectName?` · ${j.projectName}`:""} · ${j.location} · ${j.mode}</p><div class="grid-equal"><div><small>Salary / rate</small><h3>${j.salary}</h3></div><div><small>Openings</small><h3>${j.openings}</h3></div></div>${j.experience?`<p><b>Experience:</b> ${esc(j.experience)}</p>`:""}<h3>Required skills</h3>${skillTags(j.skills)}${j.responsibilities?`<h3>Key responsibilities</h3><p>${esc(j.responsibilities)}</p>`:""}<h3>Recruiter</h3>${j.recruiter?person(j.recruiter):"<p>Pending Admin assignment</p>"}`,`<button class="btn btn-secondary modal-close-2">Close</button>${session.role==="Admin"?`<button class="btn btn-primary" id="job-assign">${j.assignmentStatus==="Pending"?"Assign recruiter":"Reassign recruiter"}</button>`:`<button class="btn btn-primary" id="job-source" ${j.assignmentStatus==="Pending"?"disabled":""}>${session.role==="Client"?"Review candidates":"Source candidates"}</button>`}`);$(".modal-close-2").onclick=closeModal;$("#job-assign")?.addEventListener("click",()=>{closeModal();showAssignmentForm(j.id)});$("#job-source")?.addEventListener("click",()=>{closeModal();currentPage=session.role==="Recruiter"?"sourcing":session.role==="Client"?"cv-review":"candidates";render()}) }
-function miniResumeMarkup(profile,{visible=true,external=false}={}){
+function miniResumeMarkup(profile,{visible=true,external=false,showGapReason=false}={}){
   const experience=profile.experienceEntries||[];
   const education=normalizeEducationEntries(profile.educationEntries||[]);
   const email=external?profile.email:(visible?profile.email:maskedContact(profile.email));
@@ -2317,7 +2493,7 @@ function miniResumeMarkup(profile,{visible=true,external=false}={}){
     <section class="mini-resume-summary"><h3>Professional summary</h3><p>${esc(profile.summary||`${profile.role} experienced in ${profile.skills}.`)}</p></section>
     <section class="resume-availability-strip"><p><b>Notice period</b><span>${esc(noticePeriod)}</span></p><p><b>Last working day</b><span>${esc(lastWorkingDay)}</span></p></section>
     <section><h3>Core skills</h3><div class="display-tags">${String(profile.skills||"").split(",").filter(Boolean).map(skill=>`<span class="skill-tag">${esc(skill.trim())}</span>`).join("")}</div></section>
-    <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small><em>Duration: ${esc(experienceTenure(entry))}</em><p><b>Reason for leaving:</b> ${esc(entry.reasonForLeaving||profile.reasonForLeaving||"Reason not shared yet.")}</p></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div></section>
+    <section><h3>Professional experience</h3><div class="resume-timeline">${experience.map(entry=>`<div class="resume-entry"><i></i><div><b>${esc(entry.designation||profile.role)}</b><strong>${esc(entry.company||"Company not specified")}</strong><small>${cvMonth(entry.startMonth)||"Start date not provided"} – ${cvMonth(entry.endMonth)||"Present"}</small><em>Duration: ${esc(experienceTenure(entry))}</em><p><b>Reason for leaving:</b> ${esc(entry.reasonForLeaving||profile.reasonForLeaving||"Reason not shared yet.")}</p></div></div>`).join("")||`<p class="muted">Employment details are not available.</p>`}</div>${showGapReason?experienceGapResumeNote(profile):""}</section>
     <section><h3>Education</h3><div class="resume-education">${education.map(entry=>`<div><b>${esc(entry.level||"Education")}</b><span>${esc(entry.degree||"Degree not specified")}</span><small>${esc(entry.year||"Year not provided")}${entry.university?` · ${esc(entry.university)}`:""}</small></div>`).join("")||`<p class="muted">Education details are not available.</p>`}</div></section>
     <section class="resume-facts"><h3>Additional details</h3><div><p><b>Location</b><span>${esc(profile.location||"Not provided")}</span></p><p><b>Availability</b><span>${esc(profile.notice||profile.availability||"Not provided")}</span></p><p><b>Email</b><span>${esc(email||"Not provided")}</span></p><p><b>Phone</b><span>${esc(phone||"Not provided")}</span></p></div></section>
   </div>`;
@@ -2326,7 +2502,7 @@ function showCandidate(c){
   const visible=revealCandidateIdentity(c);
   const isClientReview=session.role==="Client"&&currentPage==="cv-review";
   const displayName=candidateDisplayName(c);
-  modal(visible?displayName:"Protected candidate profile",`<div class="candidate-resume-head">${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div>${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div></div><div class="resume-highlight-grid"><div><small>Applied role</small><b>${esc(c.role)}</b></div><div><small>Current CTC / rate</small><b>${esc(c.ctc)}</b></div></div>${miniResumeMarkup(c,{visible})}${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select. Resume skills, experience, and education remain available for review.</p>`:""}<div class="timeline">${["Sourced","Screened","AI","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${stageClass(x)} ${i<4?"done":i===4?"current":""}"><span class="stage-dot">${i<4?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="resume-pdf-link" id="view-candidate-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
+  modal(visible?displayName:"Protected candidate profile",`<div class="candidate-resume-head">${person(displayName,visible?c.email:"Email hidden until shortlisted")}<div>${badge(c.type)}${badge(c.stage)}${clientReviewBadge(c.clientReviewStatus)}${badge(`${c.score}% AI match`)}</div></div><div class="resume-highlight-grid"><div><small>Applied role</small><b>${esc(c.role)}</b></div><div><small>Current CTC / rate</small><b>${esc(c.ctc)}</b></div></div>${miniResumeMarkup(c,{visible,showGapReason:session.role==="Client"})}${!visible?`<p class="privacy-note">Candidate name, email, and mobile number become visible after the client marks the profile as Shortlist or Select. Resume skills, experience, and education remain available for review.</p>`:""}<div class="timeline">${["Sourced","Screened","AI","Client","Interview","Offer"].map((x,i)=>`<div class="stage ${stageClass(x)} ${i<4?"done":i===4?"current":""}"><span class="stage-dot">${i<4?"✓":i+1}</span>${x}</div>`).join("")}</div>`,`<button class="resume-pdf-link" id="view-candidate-resume">View complete resume ↗</button><button class="btn btn-secondary modal-close-2">Close</button>${isClientReview?"":`<button class="btn btn-primary" id="candidate-advance">Advance stage</button>`}`);
   $(".modal-close-2").onclick=closeModal;
   $("#view-candidate-resume")?.addEventListener("click",()=>viewResumePdf(c,{visible}));
   $("#candidate-advance")?.addEventListener("click",()=>{closeModal();moveCandidate(c.id)});

@@ -388,6 +388,40 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 [data-theme="dark"] .recent-activity-panel .panel-head a:hover { background: #30274d; }
 [data-theme="dark"] .dashboard-activity .activity-item { background: #151c30; }
 [data-theme="dark"] .dashboard-activity time { background: #20283e; }
+.market-intel-panel { position: relative; overflow: hidden; border-color: rgba(118,79,229,.18); background: linear-gradient(135deg, var(--paper), #fbfaff); }
+.market-intel-panel::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: linear-gradient(90deg,#2f80ed,#20b486,#7c4dff,#f59e0b,#13a8bd);
+}
+.market-intel-panel .panel-head { position: relative; z-index: 1; margin-bottom: 12px; }
+.market-intel-panel .panel-head small { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
+.market-intel-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.market-intel-tile {
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid transparent;
+  border-radius: 14px;
+  box-shadow: 0 10px 22px rgba(18,24,40,.06);
+}
+.market-intel-tile small { display: block; min-height: 24px; color: inherit; font-size: 9px; font-weight: 800; line-height: 1.25; opacity: .8; text-transform: uppercase; letter-spacing: .03em; }
+.market-intel-tile b { display: block; margin-top: 7px; font: 800 28px/1 Manrope; color: inherit; }
+.market-intel-total { color: #0b4ea2; background: #eaf3ff; border-color: #bddcff; }
+.market-intel-immediate { color: #08784a; background: #e4f8ef; border-color: #b9ecd3; }
+.market-intel-senior { color: #5c36bd; background: #eee9ff; border-color: #d6c9ff; }
+.market-intel-location { color: #a05a00; background: #fff2d8; border-color: #ffd890; }
+.market-intel-budget { color: #08778c; background: #dff8fb; border-color: #ace9f1; }
+.market-intel-agents { color: #be185d; background: #fce7f3; border-color: #f9a8d4; }
+[data-theme="dark"] .market-intel-panel { background: linear-gradient(135deg,#121a2d,#17142a); border-color: #293552; }
+[data-theme="dark"] .market-intel-tile { box-shadow: none; }
+[data-theme="dark"] .market-intel-total { color: #b8d8ff; background: #102642; border-color: #24496f; }
+[data-theme="dark"] .market-intel-immediate { color: #9df0c5; background: #0e2b20; border-color: #1f5740; }
+[data-theme="dark"] .market-intel-senior { color: #d8ccff; background: #251c45; border-color: #493482; }
+[data-theme="dark"] .market-intel-location { color: #ffd48a; background: #392605; border-color: #6d4a10; }
+[data-theme="dark"] .market-intel-budget { color: #9cecf5; background: #0b2c35; border-color: #1d5a66; }
+[data-theme="dark"] .market-intel-agents { color: #fbcfe8; background: #3a1028; border-color: #8b285e; }
 .progress { height: 7px; background: #eceef5; border-radius: 99px; overflow: hidden; }
 .progress span { height: 100%; background: var(--purple); display: block; border-radius: 99px; }
 .job-card-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 15px; }
@@ -647,6 +681,14 @@ select option.stage-color { color: var(--stage-ink); font-weight: 700; }
 .resume-entry em { margin-top: 4px; color: var(--purple); font-size: 9px; font-style: normal; font-weight: 800; }
 .resume-entry p { margin: 7px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .resume-entry p b { display: inline; color: var(--ink); font-size: inherit; }
+.resume-gap-note { margin-top: 14px; padding: 12px 13px; border: 1px solid #f0c280; border-radius: 10px; color: #8a4b16; background: #fff6e9; }
+.resume-gap-note b, .resume-gap-note strong { display: block; }
+.resume-gap-note b { font-size: 11px; }
+.resume-gap-note article { margin-top: 9px; padding-top: 9px; border-top: 1px solid rgba(138,75,22,.18); }
+.resume-gap-note article:first-of-type { border-top: 0; padding-top: 0; }
+.resume-gap-note p { margin: 5px 0; font-size: 10px; line-height: 1.45; }
+.resume-gap-note p b { display: inline; color: inherit; font-size: inherit; }
+.resume-gap-note strong { margin-top: 7px; color: var(--ink); font-size: 10px; line-height: 1.5; }
 .resume-education { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; }
 .resume-education > div { padding: 11px 12px; border: 1px solid var(--line); border-radius: 9px; background: var(--canvas); }
 .resume-education b, .resume-education span, .resume-education small { display: block; }
